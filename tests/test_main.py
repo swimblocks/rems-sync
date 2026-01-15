@@ -1,5 +1,5 @@
 import pytest
-from src.main import parse_season_to_id
+from src.utils import parse_season_to_id
 import click
 
 def test_parse_season_to_id_year():
