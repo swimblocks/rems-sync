@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+</head>
+<body>
+  <form id="loginForm">
+    <label for="username">Username:</label><br>
+    <input type="text" id="username" name="username"><br><br>
+    <label for="password">Password:</label><br>
+    <input type="password" id="password" name="password"><br><br>
+    <input type="button" value="Login" onclick="submitForm()">
+  </form>
+  <script>
+    function submitForm() {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      google.script.run.withSuccessHandler(google.script.host.close).onLoginDialogSubmit(username, password);
+    }
+  </script>
+</body>
+</html>
