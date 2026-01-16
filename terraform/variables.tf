@@ -8,3 +8,8 @@ variable "region" {
   type        = string
   default     = "us-central1"
 }
+
+variable "user_email" {
+  description = "The email address of the user to grant impersonation rights to."
+  type        = string
+}

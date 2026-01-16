@@ -84,8 +84,12 @@ Once the infrastructure is provisioned, you need to:
 
 1.  **Share your Google Sheet:**
     Share your Google Sheet with the service account email address and give it "Editor" permissions.
-2.  **Set up Application Default Credentials (ADC):**
-    The `rems-sync` CLI uses ADC to authenticate with the Google Sheets API. When you run `gcloud auth application-default login`, your user credentials are used as the ADC. To use the service account you just created, you would typically be running this on a Google Cloud service (like a VM or Cloud Run) where the service account is attached. For local development, your user credentials will work as long as you have the "Editor" role on the project.
+2.  **Set up Application Default Credentials (ADC) with Impersonation:**
+    To test with the service account's identity locally without downloading a JSON key, use service account impersonation. First, ensure your user has the `roles/iam.serviceAccountTokenCreator` role on the service account (or project). Then run:
+    ```bash
+    gcloud auth application-default login --impersonate-service-account=rems-sync-sa@<your_project_id>.iam.gserviceaccount.com
+    ```
+    This ensures that the `rems-sync` CLI runs with the exact permissions of the service account, verifying the "least privilege" setup.
 
 ## Usage
 
@@ -109,19 +113,19 @@ python -m src.main login --username <your_username> --password <your_password>
 **Refresh Members:**
 
 ```bash
-python -m src.main refresh-members --username <your_username> --password <your_password> --season <season> --output csv
+python -m src.main refresh-members --username <your_username> --password <your_password> --season <season> --output csv --output-file members.csv
 python -m src.main refresh-members --username <your_username> --password <your_password> --season <season> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Members"
 ```
 
 **Refresh Member Details:**
 
 ```bash
-python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> <rems_id_1> <rems_id_2> --output csv
+python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> <rems_id_1> <rems_id_2> --output csv --output-file member_details.csv
 python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> <rems_id_1> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Details"
 ```
 To refresh multiple member details from a file:
 ```bash
-python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> --output csv $(cat rems_ids.txt)
+python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> --output csv --output-file member_details.csv $(cat rems_ids.txt)
 # Or for Google Sheet
 python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Details" $(cat rems_ids.txt)
 ```
@@ -131,8 +135,14 @@ python -m src.main refresh-member-details --username <your_username> --password 
 
 ```bash
 # Assuming member_details.csv is the output from refresh-member-details command
-python -m src.main refresh-member-credentials --username <your_username> --password <your_password> member_details.csv --output csv
+python -m src.main refresh-member-credentials --username <your_username> --password <your_password> member_details.csv --output csv --output-file credentials.csv
 python -m src.main refresh-member-credentials --username <your_username> --password <your_password> member_details.csv --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Credentials"
+```
+
+**Upload Members from CSV:**
+
+```bash
+python -m src.main upload-members --input-file C:\Users\gavbe\Downloads\rems_export.csv --sheet-id <google_sheet_id> --sheet-name "REMS Members"
 ```
 
 Replace `<your_username>`, `<your_password>`, `<season>`, and `<google_sheet_id>` with your actual values.

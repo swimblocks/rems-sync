@@ -23,10 +23,11 @@ def login(username, password):
 @click.option('--username', envvar='REMS_USERNAME', help='The REMS username.', required=True)
 @click.option('--password', envvar='REMS_PASSWORD', help='The REMS password.', hide_input=True, required=True)
 @click.option('--output', type=click.Choice(['csv', 'gsheet']), default='csv', help='The output format.')
+@click.option('--output-file', help='The file to write CSV output to (required if output is csv).')
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Members', help='The name of the sheet to write to.')
 @click.option('--season', required=True, help='The season (e.g., "2025" or "2025-2026") to refresh.')
-def refresh_members(username, password, output, sheet_id, sheet_name, season):
+def refresh_members(username, password, output, output_file, sheet_id, sheet_name, season):
     """Refreshes the REMS members list."""
     season_id = parse_season_to_id(season)
     click.echo(f"Refreshing REMS members (output: {output}, season: {season}, season_id: {season_id})")
@@ -35,7 +36,12 @@ def refresh_members(username, password, output, sheet_id, sheet_name, season):
     csv_data = client.get_members_csv(season_id)
     
     if output == 'csv':
-        click.echo(csv_data)
+        if not output_file:
+            click.echo("Output file is required for CSV output.", err=True)
+            return
+        with open(output_file, 'w', encoding='utf-8', newline='') as f:
+            f.write(csv_data)
+        click.echo(f"Successfully wrote data to {output_file}")
     elif output == 'gsheet':
         if not sheet_id:
             click.echo("Sheet ID is required for Google Sheet output.", err=True)
@@ -48,11 +54,12 @@ def refresh_members(username, password, output, sheet_id, sheet_name, season):
 @click.option('--username', envvar='REMS_USERNAME', help='The REMS username.', required=True)
 @click.option('--password', envvar='REMS_PASSWORD', help='The REMS password.', hide_input=True, required=True)
 @click.option('--output', type=click.Choice(['csv', 'gsheet']), default='csv', help='The output format.')
+@click.option('--output-file', help='The file to write CSV output to (required if output is csv).')
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Member Details', help='The name of the sheet to write to.')
 @click.option('--season', required=True, help='The season (e.g., "2025" or "2025-2026") to refresh.')
 @click.argument('rems_ids', nargs=-1)
-def refresh_member_details(username, password, output, sheet_id, sheet_name, season, rems_ids):
+def refresh_member_details(username, password, output, output_file, sheet_id, sheet_name, season, rems_ids):
     """Refreshes the REMS member details."""
     season_id = parse_season_to_id(season)
     click.echo(f"Refreshing REMS member details (output: {output}, season: {season}, season_id: {season_id})")
@@ -72,7 +79,11 @@ def refresh_member_details(username, password, output, sheet_id, sheet_name, sea
     if all_details:
         df = pd.DataFrame(all_details)
         if output == 'csv':
-            click.echo(df.to_csv(index=False))
+            if not output_file:
+                click.echo("Output file is required for CSV output.", err=True)
+                return
+            df.to_csv(output_file, index=False)
+            click.echo(f"Successfully wrote data to {output_file}")
         elif output == 'gsheet':
             if not sheet_id:
                 click.echo("Sheet ID is required for Google Sheet output.", err=True)
@@ -84,10 +95,11 @@ def refresh_member_details(username, password, output, sheet_id, sheet_name, sea
 @click.option('--username', envvar='REMS_USERNAME', help='The REMS username.', required=True)
 @click.option('--password', envvar='REMS_PASSWORD', help='The REMS password.', hide_input=True, required=True)
 @click.option('--output', type=click.Choice(['csv', 'gsheet']), default='csv', help='The output format.')
+@click.option('--output-file', help='The file to write CSV output to (required if output is csv).')
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Member Credentials', help='The name of the sheet to write to.')
 @click.argument('member_details_file', type=click.File('r') )
-def refresh_member_credentials(username, password, output, sheet_id, sheet_name, member_details_file):
+def refresh_member_credentials(username, password, output, output_file, sheet_id, sheet_name, member_details_file):
     """Refreshes the REMS member credentials."""
     click.echo(f"Refreshing REMS member credentials (output: {output})")
     client = REMSClient(username, password, get_mfa_code)
@@ -112,13 +124,31 @@ def refresh_member_credentials(username, password, output, sheet_id, sheet_name,
     if all_credentials:
         df = pd.DataFrame(all_credentials)
         if output == 'csv':
-            click.echo(df.to_csv(index=False))
+            if not output_file:
+                click.echo("Output file is required for CSV output.", err=True)
+                return
+            df.to_csv(output_file, index=False)
+            click.echo(f"Successfully wrote data to {output_file}")
         elif output == 'gsheet':
             if not sheet_id:
                 click.echo("Sheet ID is required for Google Sheet output.", err=True)
                 return
             gsheet_client = get_gspread_client()
             write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
+
+@cli.command()
+@click.option('--input-file', type=click.Path(exists=True), required=True, help='The CSV file to upload.')
+@click.option('--sheet-id', required=True, help='The Google Sheet ID to write to.')
+@click.option('--sheet-name', default='REMS Members', help='The name of the sheet to write to.')
+def upload_members(input_file, sheet_id, sheet_name):
+    """Uploads members from a CSV file to a Google Sheet."""
+    click.echo(f"Uploading members from {input_file} to sheet {sheet_id}...")
+    try:
+        df = pd.read_csv(input_file)
+        gsheet_client = get_gspread_client()
+        write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
+    except Exception as e:
+        click.echo(f"Error uploading members: {e}", err=True)
 
 if __name__ == '__main__':
     cli()
