@@ -61,6 +61,9 @@ def test_refresh_member_details_csv(mock_mfa, mock_client_class, runner, tmp_pat
         'season_id': 123
     }
     
+    input_file = tmp_path / "input.csv"
+    input_file.write_text("Some Other Col,REMS ID\nval,SC12345678")
+    
     output_file = tmp_path / "details.csv"
     
     result = runner.invoke(cli, [
@@ -70,12 +73,28 @@ def test_refresh_member_details_csv(mock_mfa, mock_client_class, runner, tmp_pat
         '--season', '2025',
         '--output', 'csv',
         '--output-file', str(output_file),
-        'SC123456'
+        str(input_file)
     ])
     
     assert result.exit_code == 0
+    assert "Found 1 valid unique REMS IDs in REMS ID column." in result.output
     assert f"Successfully wrote data to {output_file}" in result.output
     assert os.path.exists(output_file)
+
+def test_refresh_member_details_missing_col(runner, tmp_path):
+    input_file = tmp_path / "input.csv"
+    input_file.write_text("Wrong Col\nval")
+    
+    result = runner.invoke(cli, [
+        'refresh-member-details',
+        '--username', 'testuser',
+        '--password', 'testpass',
+        '--season', '2025',
+        str(input_file)
+    ])
+    
+    assert result.exit_code == 0
+    assert "Could not find REMS ID column" in result.output
 
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
@@ -118,5 +137,22 @@ def test_upload_members(mock_write_df, mock_get_client, runner, tmp_path):
     
     assert result.exit_code == 0
     assert "Uploading members from" in result.output
+    mock_get_client.assert_called_once()
+    mock_write_df.assert_called_once()
+
+@patch('src.main.get_gspread_client')
+@patch('src.main.write_df_to_sheet')
+def test_upload_member_details(mock_write_df, mock_get_client, runner, tmp_path):
+    input_file = tmp_path / "details.csv"
+    input_file.write_text("rems_id,member_id\nSC12345678,456")
+    
+    result = runner.invoke(cli, [
+        'upload-member-details',
+        '--input-file', str(input_file),
+        '--sheet-id', 'test-sheet-id'
+    ])
+    
+    assert result.exit_code == 0
+    assert "Uploading member details from" in result.output
     mock_get_client.assert_called_once()
     mock_write_df.assert_called_once()
