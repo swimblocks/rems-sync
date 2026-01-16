@@ -30,3 +30,11 @@ def parse_season_to_id(season_str):
 
     season_id = base_season_id + (start_year - base_year)
     return season_id
+
+def validate_rems_id(rems_id):
+    """
+    Validates that a REMS ID starts with 'SC' followed by at least 8 digits.
+    """
+    if not rems_id:
+        return False
+    return bool(re.match(r'^SC\d{8,}$', str(rems_id)))

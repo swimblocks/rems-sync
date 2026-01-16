@@ -122,7 +122,7 @@ class REMSClient:
                 member_id = match.group(2)
                 break
         
-        rems_id_input = soup.select_one('#member-member-identifiers-1-member-identifier')
+        rems_id_input = soup.select_one('#member-member-identifiers-0-member-identifier')
         rems_id = rems_id_input.get('value') if rems_id_input else None
 
         return {

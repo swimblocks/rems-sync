@@ -27,3 +27,13 @@ def test_parse_season_to_id_invalid_input():
         parse_season_to_id("2025-202X")
     with pytest.raises(click.BadParameter, match="Season must be a year"):
         parse_season_to_id("2025-202")
+
+def test_validate_rems_id():
+    from src.utils import validate_rems_id
+    assert validate_rems_id("SC24074099") is True
+    assert validate_rems_id("SC12345678") is True
+    assert validate_rems_id("SC1234567") is False # too short
+    assert validate_rems_id("AB12345678") is False # wrong prefix
+    assert validate_rems_id("SC12345678A") is False # extra char
+    assert validate_rems_id(None) is False
+

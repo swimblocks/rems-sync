@@ -120,16 +120,10 @@ python -m src.main refresh-members --username <your_username> --password <your_p
 **Refresh Member Details:**
 
 ```bash
-python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> <rems_id_1> <rems_id_2> --output csv --output-file member_details.csv
-python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> <rems_id_1> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Details"
+python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> members.csv --output csv --output-file member_details.csv
+python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> members.csv --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Details"
 ```
-To refresh multiple member details from a file:
-```bash
-python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> --output csv --output-file member_details.csv $(cat rems_ids.txt)
-# Or for Google Sheet
-python -m src.main refresh-member-details --username <your_username> --password <your_password> --season <season> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Details" $(cat rems_ids.txt)
-```
-(where `rems_ids.txt` contains a space-separated list of REMS IDs)
+The input CSV file (e.g., `members.csv`) must contain a column named something like "REMS ID", "REMSID", or "rems_id".
 
 **Refresh Member Credentials:**
 
@@ -143,6 +137,12 @@ python -m src.main refresh-member-credentials --username <your_username> --passw
 
 ```bash
 python -m src.main upload-members --input-file C:\Users\gavbe\Downloads\rems_export.csv --sheet-id <google_sheet_id> --sheet-name "REMS Members"
+```
+
+**Upload Member Details from CSV:**
+
+```bash
+python -m src.main upload-member-details --input-file c:\Users\gavbe\Downloads\rems_member_details.csv --sheet-id <google_sheet_id> --sheet-name "REMS Member Details"
 ```
 
 Replace `<your_username>`, `<your_password>`, `<season>`, and `<google_sheet_id>` with your actual values.

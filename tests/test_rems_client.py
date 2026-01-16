@@ -119,7 +119,7 @@ def test_get_member_details(rems_client):
     member_season_id = 789
     season_id = 123
     html_response = f"""
-    <input id="member-member-identifiers-1-member-identifier" value="SC123456" />
+    <input id="member-member-identifiers-0-member-identifier" value="SC12345678" />
     <a class="smr-button" href="/sportlomo/user/credentials/member-credentials-details/{member_season_id}/456">View Credentials</a>
     """
     responses.add(
@@ -131,7 +131,7 @@ def test_get_member_details(rems_client):
 
     details = rems_client.get_member_details(member_season_id, season_id)
     assert details == {
-        'rems_id': 'SC123456',
+        'rems_id': 'SC12345678',
         'member_id': '456',
         'member_season_id': member_season_id,
         'season_id': season_id,

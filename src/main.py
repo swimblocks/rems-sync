@@ -3,7 +3,7 @@ import pandas as pd
 from io import StringIO
 from .rems_client import REMSClient, get_mfa_code
 from .gsheet import get_gspread_client, write_df_to_sheet
-from .utils import parse_season_to_id
+from .utils import parse_season_to_id, validate_rems_id
 
 
 @click.group()
@@ -58,11 +58,37 @@ def refresh_members(username, password, output, output_file, sheet_id, sheet_nam
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Member Details', help='The name of the sheet to write to.')
 @click.option('--season', required=True, help='The season (e.g., "2025" or "2025-2026") to refresh.')
-@click.argument('rems_ids', nargs=-1)
-def refresh_member_details(username, password, output, output_file, sheet_id, sheet_name, season, rems_ids):
-    """Refreshes the REMS member details."""
+@click.argument('input_file', type=click.Path(exists=True))
+def refresh_member_details(username, password, output, output_file, sheet_id, sheet_name, season, input_file):
+    """Refreshes the REMS member details using REMS IDs from an input CSV."""
     season_id = parse_season_to_id(season)
-    click.echo(f"Refreshing REMS member details (output: {output}, season: {season}, season_id: {season_id})")
+    click.echo(f"Refreshing REMS member details (input: {input_file}, output: {output}, season: {season}, season_id: {season_id})")
+    
+    try:
+        df_input = pd.read_csv(input_file)
+    except Exception as e:
+        click.echo(f"Error reading input file: {e}", err=True)
+        return
+
+    # Look for REMS ID column (case-insensitive, ignore non-alphanumeric)
+    rems_id_col = None
+    for col in df_input.columns:
+        normalized = "".join(c for c in col.upper() if c.isalnum())
+        if normalized == "REMSID":
+            rems_id_col = col
+            break
+    
+    if not rems_id_col:
+        click.echo(f"Could not find REMS ID column in {input_file}. Found columns: {list(df_input.columns)}", err=True)
+        return
+
+    rems_ids_all = df_input[rems_id_col].dropna().unique()
+    rems_ids = [rid for rid in rems_ids_all if validate_rems_id(rid)]
+    
+    click.echo(f"Found {len(rems_ids)} valid unique REMS IDs in {rems_id_col} column.")
+    if len(rems_ids) < len(rems_ids_all):
+        click.echo(f"Skipped {len(rems_ids_all) - len(rems_ids)} invalid REMS IDs.")
+
     client = REMSClient(username, password, get_mfa_code)
     client.login()
     
@@ -149,6 +175,20 @@ def upload_members(input_file, sheet_id, sheet_name):
         write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
     except Exception as e:
         click.echo(f"Error uploading members: {e}", err=True)
+
+@cli.command()
+@click.option('--input-file', type=click.Path(exists=True), required=True, help='The CSV file to upload.')
+@click.option('--sheet-id', required=True, help='The Google Sheet ID to write to.')
+@click.option('--sheet-name', default='REMS Member Details', help='The name of the sheet to write to.')
+def upload_member_details(input_file, sheet_id, sheet_name):
+    """Uploads member details from a CSV file to a Google Sheet."""
+    click.echo(f"Uploading member details from {input_file} to sheet {sheet_id}...")
+    try:
+        df = pd.read_csv(input_file)
+        gsheet_client = get_gspread_client()
+        write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
+    except Exception as e:
+        click.echo(f"Error uploading member details: {e}", err=True)
 
 if __name__ == '__main__':
     cli()
