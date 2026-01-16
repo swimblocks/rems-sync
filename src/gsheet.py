@@ -25,5 +25,10 @@ def write_df_to_sheet(df, sheet_id, sheet_name, client):
         worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="20")
     
     worksheet.clear()
-    worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+    # Replace NaN with empty string to avoid JSON compliance issues
+    df_filled = df.fillna('')
+    # Filter out columns that are "Unnamed" (Pandas adds these for trailing commas)
+    cols_to_include = [c for c in df_filled.columns if not str(c).startswith('Unnamed:')]
+    df_final = df_filled[cols_to_include]
+    worksheet.update([df_final.columns.values.tolist()] + df_final.values.tolist())
     click.echo(f"Successfully wrote data to sheet: {sheet_name}")
