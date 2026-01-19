@@ -19,8 +19,31 @@ This project is a Python-based CLI tool to synchronize data from the Swimming Ca
 2.  **Create and activate a virtual environment:**
     ```bash
     python -m venv .venv
-    .\.venv\Scripts\activate
     ```
+
+    Activate the virtual environment:
+
+    <details open>
+    <summary><strong>Windows</strong></summary>
+
+    **Command Prompt:**
+    ```cmd
+    .venv\Scripts\activate
+    ```
+
+    **PowerShell:**
+    ```powershell
+    .venv\Scripts\Activate.ps1
+    ```
+    </details>
+
+    <details>
+    <summary><strong>Linux/macOS</strong></summary>
+
+    ```bash
+    source .venv/bin/activate
+    ```
+    </details>
 3.  **Install dependencies:**
     ```bash
     pip install -r requirements.txt
@@ -136,13 +159,13 @@ python -m src.main refresh-member-credentials --username <your_username> --passw
 **Upload Members from CSV:**
 
 ```bash
-python -m src.main upload-members --input-file C:\Users\gavbe\Downloads\rems_export.csv --sheet-id <google_sheet_id> --sheet-name "REMS Members"
+python -m src.main upload-members --input-file rems_export.csv --sheet-id <google_sheet_id> --sheet-name "REMS Members"
 ```
 
 **Upload Member Details from CSV:**
 
 ```bash
-python -m src.main upload-member-details --input-file c:\Users\gavbe\Downloads\rems_member_details.csv --sheet-id <google_sheet_id> --sheet-name "REMS Member Details"
+python -m src.main upload-member-details --input-file rems_member_details.csv --sheet-id <google_sheet_id> --sheet-name "REMS Member Details"
 ```
 
 Replace `<your_username>`, `<your_password>`, `<season>`, and `<google_sheet_id>` with your actual values.
