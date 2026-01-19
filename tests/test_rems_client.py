@@ -193,3 +193,77 @@ def test_get_member_credentials(rems_client):
     assert len(credentials) == 2
     assert credentials[0]['name'] == 'Cred Name 1'
     assert credentials[1]['name'] == 'Cred Name 2'
+
+def test_restore_from_cache_success(rems_client):
+    """Test successful session restoration from cache."""
+    auth_data = {
+        'session_cookies': {
+            'session_id': 'test123',
+            'auth_token': 'token456'
+        }
+    }
+
+    result = rems_client.restore_from_cache(auth_data)
+
+    assert result is True
+    assert rems_client.session.cookies.get('session_id') == 'test123'
+    assert rems_client.session.cookies.get('auth_token') == 'token456'
+
+def test_restore_from_cache_empty_cookies(rems_client):
+    """Test session restoration with empty cookies."""
+    auth_data = {
+        'session_cookies': {}
+    }
+
+    result = rems_client.restore_from_cache(auth_data)
+
+    assert result is True
+    assert len(rems_client.session.cookies) == 0
+
+def test_restore_from_cache_missing_key(rems_client):
+    """Test session restoration with missing session_cookies key."""
+    auth_data = {}
+
+    result = rems_client.restore_from_cache(auth_data)
+
+    assert result is True
+
+@responses.activate
+def test_is_session_valid_true(rems_client):
+    """Test session validity check when session is valid."""
+    responses.add(
+        responses.GET,
+        f"{rems_client.BASE_URL}/logged-in.php",
+        status=200,
+    )
+
+    is_valid = rems_client.is_session_valid()
+
+    assert is_valid is True
+
+@responses.activate
+def test_is_session_valid_false_redirect(rems_client):
+    """Test session validity check when session is invalid (redirect)."""
+    responses.add(
+        responses.GET,
+        f"{rems_client.BASE_URL}/logged-in.php",
+        status=302,
+        headers={"Location": f"{rems_client.BASE_URL}/login"}
+    )
+
+    is_valid = rems_client.is_session_valid()
+
+    assert is_valid is False
+
+@responses.activate
+def test_is_session_valid_false_unauthorized(rems_client):
+    """Test session validity check when session is invalid (401)."""
+    responses.add(
+        responses.GET,
+        f"{rems_client.BASE_URL}/logged-in.php",
+        status=401,
+    )
+
+    is_valid = rems_client.is_session_valid()
+
+    assert is_valid is False

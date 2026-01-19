@@ -115,23 +115,113 @@ Once the infrastructure is provisioned, you need to:
     ```
     This ensures that the `rems-sync` CLI runs with the exact permissions of the service account, verifying the "least privilege" setup.
 
+## Gmail API Setup (Optional - For Automated MFA)
+
+To use automated MFA code extraction from Gmail (recommended for unattended operation), you need to enable the Gmail API and configure authentication:
+
+1. **Enable Gmail API** in your GCP project (done automatically via Terraform when you apply the configuration)
+
+2. **Authenticate with Gmail access**:
+   - Run `gcloud auth application-default login` to authenticate with your Google account
+   - This grants the application access to your Gmail inbox to retrieve MFA codes
+   - The tool uses read-only access and marks emails as read after extracting codes
+
+3. **Verify Gmail access**:
+   - Ensure your Google account receives MFA codes from `noreply@sportsmanager.ie`
+   - The tool searches for emails with subject "verification code" sent within the last 5 minutes
+
+**Note**: Gmail API access is only required if you want to use `--use-gmail-mfa` flag. You can still use interactive MFA prompts without this setup.
+
+## Authentication Caching
+
+This tool supports caching your REMS authentication in GCP Secret Manager to avoid repeated MFA prompts. Cached sessions are valid for 8 hours.
+
+### Initial Setup
+
+Run the `setup-auth` command to cache your credentials:
+
+<details open>
+<summary><strong>Windows</strong></summary>
+
+```bash
+python -m src.main setup-auth --username <your_username> --password <your_password> --project-id <your_gcp_project>
+```
+
+With Gmail MFA (no manual code entry needed):
+```bash
+python -m src.main setup-auth --username <your_username> --password <your_password> --project-id <your_gcp_project> --use-gmail-mfa
+```
+</details>
+
+<details>
+<summary><strong>Linux/macOS</strong></summary>
+
+```bash
+python -m src.main setup-auth --username <your_username> --password <your_password> --project-id <your_gcp_project>
+```
+
+With Gmail MFA (no manual code entry needed):
+```bash
+python -m src.main setup-auth --username <your_username> --password <your_password> --project-id <your_gcp_project> --use-gmail-mfa
+```
+</details>
+
+### Using Cached Authentication
+
+Once set up, all commands automatically use cached authentication when you provide `--project-id`:
+
+```bash
+python -m src.main refresh-members --season 2025 --output csv --output-file members.csv --project-id <your_gcp_project>
+```
+
+No username, password, or MFA code required!
+
+### Skipping Cache (for Testing)
+
+To bypass cached authentication and use interactive prompts:
+
+```bash
+python -m src.main refresh-members --skip-cache --username <your_username> --password <your_password> --season 2025 --output csv --output-file members.csv
+```
+
+### Environment Variables
+
+You can set these environment variables to avoid repeating common options:
+
+- `REMS_USERNAME`: Your REMS username
+- `REMS_PASSWORD`: Your REMS password
+- `GCP_PROJECT_ID`: Your GCP project ID for Secret Manager
+
+Example:
+```bash
+export GCP_PROJECT_ID="your-project-id"
+python -m src.main refresh-members --season 2025 --output csv --output-file members.csv
+```
+
+### Migration Note
+
+**Breaking Change**: The `login` command has been removed. Use `setup-auth` instead to configure and cache your authentication.
+
 ## Usage
 
 ### Authentication
 
-Each command that interacts with REMS requires your REMS username and password for authentication. You can provide these as command-line options or environment variables.
+Each command that interacts with REMS requires authentication. You have several options:
 
--   **Command-line options:** `--username <your_username>` and `--password <your_password>`
--   **Environment variables:** `REMS_USERNAME` and `REMS_PASSWORD`
+1. **Cached authentication** (recommended): Use `setup-auth` once, then provide `--project-id` to subsequent commands
+2. **Command-line options**: `--username <your_username>` and `--password <your_password>`
+3. **Environment variables**: `REMS_USERNAME` and `REMS_PASSWORD`
 
-You will also be prompted for an MFA code during the login process.
+For MFA codes, you can:
+- Enter them manually when prompted (default)
+- Use `--use-gmail-mfa` flag for automatic extraction from Gmail (requires Gmail API setup)
 
 ### Commands
 
-**Login:**
+**Setup Authentication (replaces login):**
 
 ```bash
-python -m src.main login --username <your_username> --password <your_password>
+python -m src.main setup-auth --username <your_username> --password <your_password> --project-id <your_gcp_project>
 ```
 
 **Refresh Members:**

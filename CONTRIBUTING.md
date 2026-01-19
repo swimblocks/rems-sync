@@ -16,6 +16,10 @@ Before finalizing a change, please ensure the following checklist is completed:
 -   [ ] **Tests:**
     -   [ ] Have I added new tests for the changes I've made?
     -   [ ] Do all tests (new and existing) pass?
+-   [ ] **Type Checking:**
+    -   [ ] Have I run Pylance in strict mode and fixed all type errors?
+    -   [ ] Have I added type hints to new functions and methods?
+    -   [ ] Are all function parameters and return types properly annotated?
 -   [ ] **Documentation:**
     -   [ ] Have I updated the `README.md` to reflect any changes to the CLI or functionality?
     -   [ ] Have I added or updated docstrings for any new or modified functions/classes?

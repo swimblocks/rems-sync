@@ -1,15 +1,19 @@
 import requests
 import click
 import re
+from typing import Optional, Callable, Any
 from bs4 import BeautifulSoup
 
 class REMSClient:
     BASE_URL = "https://swimming.canada.sportsmanager.ie"
 
-    def __init__(self, username, password, mfa_callback):
+    def __init__(self, username: str, password: str, mfa_callback: Callable[[], Optional[str]],
+                 use_cached_auth: bool = True, project_id: Optional[str] = None):
         self.username = username
         self.password = password
         self.mfa_callback = mfa_callback
+        self.use_cached_auth = use_cached_auth
+        self.project_id = project_id
         self.session = requests.Session()
 
     def login(self):
@@ -181,6 +185,48 @@ class REMSClient:
             page_number += 1
 
         return credentials
+
+    def restore_from_cache(self, auth_data: dict[str, Any]) -> bool:
+        """
+        Restores session from cached authentication data.
+
+        Args:
+            auth_data: Dictionary with session_cookies.
+
+        Returns:
+            bool: True if restoration successful, False otherwise.
+        """
+        try:
+            # Restore session cookies
+            session_cookies = auth_data.get('session_cookies', {})
+            for name, value in session_cookies.items():
+                self.session.cookies.set(name, value)
+
+            return True
+        except Exception as e:
+            click.echo(f"Failed to restore session from cache: {e}", err=True)
+            return False
+
+    def is_session_valid(self) -> bool:
+        """
+        Tests if current session is still valid by making a simple request.
+
+        Returns:
+            bool: True if session is valid, False otherwise.
+        """
+        try:
+            # Try to access a protected page (logged-in.php)
+            test_url = f"{self.BASE_URL}/logged-in.php"
+            response = self.session.get(test_url, allow_redirects=False)
+
+            # If we get a 200 status, session is valid
+            # If we get redirected (302), session is invalid
+            return response.status_code == 200
+
+        except Exception as e:
+            click.echo(f"Error checking session validity: {e}", err=True)
+            return False
+
 
 def get_mfa_code():
     return click.prompt("Please enter the MFA code", type=str)
