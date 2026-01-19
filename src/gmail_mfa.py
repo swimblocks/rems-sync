@@ -2,7 +2,7 @@
 import re
 import time
 import base64
-from typing import Optional, Any, Tuple
+from typing import Optional, Any, cast
 from googleapiclient.discovery import build, Resource
 from google.auth.credentials import Credentials
 import click
@@ -28,7 +28,9 @@ def get_gmail_service() -> Resource:
         scopes = ['https://www.googleapis.com/auth/gmail.readonly',
                   'https://www.googleapis.com/auth/gmail.modify']
         creds, _ = default(scopes=scopes)
-        service = build('gmail', 'v1', credentials=creds)
+        # Cast to Credentials to satisfy type checker
+        creds = cast(Credentials, creds)
+        service: Resource = build('gmail', 'v1', credentials=creds)
         return service
     except Exception as e:
         raise GmailMFAError(f"Failed to authenticate with Gmail API: {e}") from e
@@ -110,17 +112,17 @@ def extract_mfa_code_from_email(max_wait_seconds: int = 60) -> Optional[str]:
     while time.time() - start_time < max_wait_seconds:
         try:
             # Search for messages
-            results = service.users().messages().list(
+            results: dict[str, Any] = service.users().messages().list(  # type: ignore
                 userId='me',
                 q=query,
                 maxResults=1
             ).execute()
 
-            messages = results.get('messages', [])
+            messages: list[Any] = results.get('messages', [])
 
             if messages:
                 # Get the full message
-                message = service.users().messages().get(
+                message: dict[str, Any] = service.users().messages().get(  # type: ignore
                     userId='me',
                     id=messages[0]['id'],
                     format='full'
@@ -131,7 +133,7 @@ def extract_mfa_code_from_email(max_wait_seconds: int = 60) -> Optional[str]:
 
                 if mfa_code:
                     # Mark email as read
-                    service.users().messages().modify(
+                    service.users().messages().modify(  # type: ignore
                         userId='me',
                         id=messages[0]['id'],
                         body={'removeLabelIds': ['UNREAD']}

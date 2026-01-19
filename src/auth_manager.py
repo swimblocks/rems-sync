@@ -1,9 +1,10 @@
 """Authentication caching using GCP Secret Manager."""
 import json
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Any
+from typing import Optional, Any, cast
 import requests
 from google.cloud import secretmanager
+from google.auth.credentials import Credentials
 import click
 
 
@@ -25,6 +26,8 @@ def get_secret_manager_client() -> secretmanager.SecretManagerServiceClient:
     try:
         from google.auth import default
         creds, _ = default()
+        # Cast to Credentials to satisfy type checker
+        creds = cast(Credentials, creds)
         client = secretmanager.SecretManagerServiceClient(credentials=creds)
         return client
     except Exception as e:
@@ -52,12 +55,13 @@ def store_auth(username: str, password: str, session: requests.Session,
         client = get_secret_manager_client()
 
         # Serialize session cookies
-        session_cookies = {}
+        session_cookies: dict[str, str] = {}
         for cookie in session.cookies:
-            session_cookies[cookie.name] = cookie.value
+            if cookie.value is not None:
+                session_cookies[cookie.name] = cookie.value
 
         # Create auth data structure
-        auth_data = {
+        auth_data: dict[str, Any] = {
             "username": username,
             "password": password,
             "session_cookies": session_cookies,
@@ -110,7 +114,7 @@ def load_auth(project_id: str, secret_id: str = "rems-auth") -> Optional[dict[st
 
         # Deserialize payload
         payload = response.payload.data.decode('utf-8')
-        auth_data = json.loads(payload)
+        auth_data: dict[str, Any] = json.loads(payload)
 
         return auth_data
 

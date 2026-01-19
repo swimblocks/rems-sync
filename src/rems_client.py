@@ -16,12 +16,12 @@ class REMSClient:
         self.project_id = project_id
         self.session = requests.Session()
 
-    def login(self):
+    def login(self) -> bool:
         """Logs in to the REMS system."""
         self.session.cookies.clear()
         login_url = f"{self.BASE_URL}/Maint-Login.php"
         login_payload = {"username": self.username, "password": self.password}
-        
+
         response = self.session.post(login_url, data=login_payload, allow_redirects=False)
         response.raise_for_status()
 
@@ -34,10 +34,10 @@ class REMSClient:
 
         if response.status_code != 302:
             raise Exception("Login failed: Unexpected status code on MFA redirect")
-        
+
         return self._do_mfa()
 
-    def _do_mfa(self):
+    def _do_mfa(self) -> bool:
         mfa_code = self.mfa_callback()
         if not mfa_code or len(mfa_code) != 6:
             raise Exception("Invalid MFA code")
@@ -60,21 +60,21 @@ class REMSClient:
         click.echo("Login successful")
         return True
 
-    def logout(self):
+    def logout(self) -> None:
         """Logs out of the REMS system."""
         logout_url = f"{self.BASE_URL}/Maint-Logout.php"
         self.session.get(logout_url)
         self.session.cookies.clear()
         click.echo("Logout successful")
 
-    def get_members_csv(self, season_id, group_id=50113):
+    def get_members_csv(self, season_id: str, group_id: int = 50113) -> str:
         """Fetches the members CSV for a given season and group."""
         url = f"{self.BASE_URL}/sportlomo/user/membership-management/member-export?FilterForm%5Bseason_id%5D={season_id}&FilterForm%5Bgroup_id%5D={group_id}"
         response = self.session.get(url, headers={'Accept': 'text/csv'})
         response.raise_for_status()
         return response.text
 
-    def get_member_season_id(self, rems_id, season_id):
+    def get_member_season_id(self, rems_id: str, season_id: str) -> Optional[str]:
         """
         Get the MemberSeasonDetail for a given Swimming Canada REMS Member ID.
         Returns the memberSeasonId.
@@ -101,13 +101,14 @@ class REMSClient:
                 actions_cell = columns[13]
                 action_link = actions_cell.find('a')
                 if action_link:
-                    href = action_link['href']
-                    match = re.search(r'member-detail/(\d+)', href)
-                    if match:
-                        return match.group(1)
+                    href = action_link.get('href')
+                    if href and isinstance(href, str):
+                        match = re.search(r'member-detail/(\d+)', href)
+                        if match:
+                            return match.group(1)
         return None
 
-    def get_member_details(self, member_season_id, season_id):
+    def get_member_details(self, member_season_id: str, season_id: str) -> dict[str, Optional[str]]:
         """
         Get from URL like $baseUrl/user/membership-management/member-detail/${memberSeasonId}
         @returns {dict}
@@ -118,16 +119,20 @@ class REMSClient:
 
         soup = BeautifulSoup(response.text, 'lxml')
 
-        member_id = None
+        member_id: Optional[str] = None
         for a in soup.select('a.smr-button'):
             href = a.get('href', '')
-            match = re.search(r'member-credentials-details/(\d+)/(\d+)', href)
-            if match:
-                member_id = match.group(2)
-                break
-        
+            if isinstance(href, str):
+                match = re.search(r'member-credentials-details/(\d+)/(\d+)', href)
+                if match:
+                    member_id = match.group(2)
+                    break
+
         rems_id_input = soup.select_one('#member-member-identifiers-0-member-identifier')
-        rems_id = rems_id_input.get('value') if rems_id_input else None
+        rems_id: Optional[str] = None
+        if rems_id_input:
+            value = rems_id_input.get('value')
+            rems_id = value if isinstance(value, str) else None
 
         return {
             'rems_id': rems_id,
@@ -136,11 +141,11 @@ class REMSClient:
             'season_id': season_id,
         }
 
-    def get_member_credentials(self, rems_id, member_id, member_season_id, page_size=100):
+    def get_member_credentials(self, rems_id: str, member_id: str, member_season_id: str, page_size: int = 100) -> list[dict[str, str]]:
         """
         Get a table of Member Credentials Details for a member who was active in some season.
         """
-        credentials = []
+        credentials: list[dict[str, str]] = []
         page_number = 1
         total_pages = 1
 
@@ -151,7 +156,7 @@ class REMSClient:
             response.raise_for_status()
 
             soup = BeautifulSoup(response.text, 'lxml')
-            
+
             if page_number == 1:
                 pagination_text_element = soup.select_one('.ssm-pagination .no-of-records')
                 if pagination_text_element:
@@ -167,7 +172,11 @@ class REMSClient:
             for row in table_rows:
                 columns = row.find_all('td')
                 if len(columns) > 1:
-                    actions = [a['href'] for a in columns[6].find_all('a')]
+                    actions: list[str] = []
+                    for a in columns[6].find_all('a'):
+                        href = a.get('href')
+                        if href and isinstance(href, str):
+                            actions.append(href)
                     credentials.append({
                         'rems_id': rems_id,
                         'member_id': member_id,
@@ -181,7 +190,7 @@ class REMSClient:
                         'expiry_date': columns[6].text.strip(),
                         'actions': ", ".join(actions),
                     })
-            
+
             page_number += 1
 
         return credentials
@@ -228,6 +237,6 @@ class REMSClient:
             return False
 
 
-def get_mfa_code():
+def get_mfa_code() -> Optional[str]:
     return click.prompt("Please enter the MFA code", type=str)
 

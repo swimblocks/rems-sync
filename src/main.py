@@ -1,7 +1,7 @@
 import click
 import pandas as pd
 from io import StringIO
-from typing import Optional
+from typing import Optional, Any
 from .rems_client import REMSClient, get_mfa_code
 from .gsheet import get_gspread_client, write_df_to_sheet
 from .utils import parse_season_to_id, validate_rems_id
@@ -38,10 +38,19 @@ def get_authenticated_client(username: Optional[str], password: Optional[str],
         # Try to use cached session
         cached_username = auth_data.get('username')
         cached_password = auth_data.get('password')
+
+        # Determine effective username and password
+        effective_username = username or cached_username
+        effective_password = password or cached_password
+
+        # Validate we have credentials
+        if not effective_username or not effective_password:
+            raise click.UsageError("Username and password required")
+
         mfa_callback = get_mfa_code_gmail if use_gmail_mfa else get_mfa_code
         client = REMSClient(
-            username or cached_username,
-            password or cached_password,
+            effective_username,
+            effective_password,
             mfa_callback,
             project_id=project_id
         )
@@ -59,6 +68,10 @@ def get_authenticated_client(username: Optional[str], password: Optional[str],
             raise click.UsageError(
                 "Username and password required. Please run 'setup-auth' first or provide credentials."
             )
+
+    # Final validation
+    if not username or not password:
+        raise click.UsageError("Username and password required")
 
     mfa_callback = get_mfa_code_gmail if use_gmail_mfa else get_mfa_code
     client = REMSClient(username, password, mfa_callback, project_id=project_id)
@@ -111,7 +124,7 @@ def refresh_members(username: Optional[str], password: Optional[str], skip_cache
     season_id = parse_season_to_id(season)
     click.echo(f"Refreshing REMS members (output: {output}, season: {season}, season_id: {season_id})")
     client = get_authenticated_client(username, password, skip_cache, use_gmail_mfa, project_id)
-    csv_data = client.get_members_csv(season_id)
+    csv_data = client.get_members_csv(str(season_id))
     
     if output == 'csv':
         if not output_file:
@@ -140,7 +153,10 @@ def refresh_members(username: Optional[str], password: Optional[str], skip_cache
 @click.option('--sheet-name', default='REMS Member Details', help='The name of the sheet to write to.')
 @click.option('--season', required=True, help='The season (e.g., "2025" or "2025-2026") to refresh.')
 @click.argument('input_file', type=click.Path(exists=True))
-def refresh_member_details(username, password, skip_cache, use_gmail_mfa, project_id, output, output_file, sheet_id, sheet_name, season, input_file):
+def refresh_member_details(username: Optional[str], password: Optional[str], skip_cache: bool,
+                          use_gmail_mfa: bool, project_id: Optional[str], output: str,
+                          output_file: Optional[str], sheet_id: Optional[str],
+                          sheet_name: str, season: str, input_file: str) -> None:
     """Refreshes the REMS member details using REMS IDs from an input CSV."""
     season_id = parse_season_to_id(season)
     click.echo(f"Refreshing REMS member details (input: {input_file}, output: {output}, season: {season}, season_id: {season_id})")
@@ -175,9 +191,9 @@ def refresh_member_details(username, password, skip_cache, use_gmail_mfa, projec
     all_details = []
     for rems_id in rems_ids:
         click.echo(f"Fetching details for {rems_id}...")
-        member_season_id = client.get_member_season_id(rems_id, season_id)
+        member_season_id = client.get_member_season_id(rems_id, str(season_id))
         if member_season_id:
-            details = client.get_member_details(member_season_id, season_id)
+            details = client.get_member_details(member_season_id, str(season_id))
             all_details.append(details)
         else:
             click.echo(f"Could not find member season ID for {rems_id}", err=True)
@@ -207,8 +223,11 @@ def refresh_member_details(username, password, skip_cache, use_gmail_mfa, projec
 @click.option('--output-file', help='The file to write CSV output to (required if output is csv).')
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Member Credentials', help='The name of the sheet to write to.')
-@click.argument('member_details_file', type=click.File('r') )
-def refresh_member_credentials(username, password, skip_cache, use_gmail_mfa, project_id, output, output_file, sheet_id, sheet_name, member_details_file):
+@click.argument('member_details_file', type=click.File('r'))
+def refresh_member_credentials(username: Optional[str], password: Optional[str], skip_cache: bool,
+                              use_gmail_mfa: bool, project_id: Optional[str], output: str,
+                              output_file: Optional[str], sheet_id: Optional[str],
+                              sheet_name: str, member_details_file: Any) -> None:
     """Refreshes the REMS member credentials."""
     click.echo(f"Refreshing REMS member credentials (output: {output})")
     client = get_authenticated_client(username, password, skip_cache, use_gmail_mfa, project_id)
@@ -223,9 +242,9 @@ def refresh_member_credentials(username, password, skip_cache, use_gmail_mfa, pr
     for _, row in member_details_df.iterrows():
         click.echo(f"Fetching credentials for {row['rems_id']}...")
         credentials = client.get_member_credentials(
-            row['rems_id'],
-            row['member_id'],
-            row['member_season_id']
+            str(row['rems_id']),
+            str(row['member_id']),
+            str(row['member_season_id'])
         )
         all_credentials.extend(credentials)
 
@@ -248,7 +267,7 @@ def refresh_member_credentials(username, password, skip_cache, use_gmail_mfa, pr
 @click.option('--input-file', type=click.Path(exists=True), required=True, help='The CSV file to upload.')
 @click.option('--sheet-id', required=True, help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Members', help='The name of the sheet to write to.')
-def upload_members(input_file, sheet_id, sheet_name):
+def upload_members(input_file: str, sheet_id: str, sheet_name: str) -> None:
     """Uploads members from a CSV file to a Google Sheet."""
     click.echo(f"Uploading members from {input_file} to sheet {sheet_id}...")
     try:
@@ -262,7 +281,7 @@ def upload_members(input_file, sheet_id, sheet_name):
 @click.option('--input-file', type=click.Path(exists=True), required=True, help='The CSV file to upload.')
 @click.option('--sheet-id', required=True, help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Member Details', help='The name of the sheet to write to.')
-def upload_member_details(input_file, sheet_id, sheet_name):
+def upload_member_details(input_file: str, sheet_id: str, sheet_name: str) -> None:
     """Uploads member details from a CSV file to a Google Sheet."""
     click.echo(f"Uploading member details from {input_file} to sheet {sheet_id}...")
     try:
@@ -276,7 +295,7 @@ def upload_member_details(input_file, sheet_id, sheet_name):
 @click.option('--input-file', type=click.Path(exists=True), required=True, help='The CSV file to upload.')
 @click.option('--sheet-id', required=True, help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Member Credentials', help='The name of the sheet to write to.')
-def upload_member_credentials(input_file, sheet_id, sheet_name):
+def upload_member_credentials(input_file: str, sheet_id: str, sheet_name: str) -> None:
     """Uploads member credentials from a CSV file to a Google Sheet."""
     click.echo(f"Uploading member credentials from {input_file} to sheet {sheet_id}...")
     try:

@@ -1,8 +1,11 @@
 import gspread
 import click
 import google.auth
+from typing import cast
+from google.auth.credentials import Credentials
+import pandas as pd
 
-def get_gspread_client():
+def get_gspread_client() -> gspread.Client:
     """
     Returns an authenticated gspread client using Application Default Credentials.
     """
@@ -10,11 +13,13 @@ def get_gspread_client():
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive'
     ]
-    creds, project = google.auth.default(scopes=scopes)
+    creds, _ = google.auth.default(scopes=scopes)
+    # Cast to Credentials to satisfy type checker
+    creds = cast(Credentials, creds)
     client = gspread.authorize(creds)
     return client
 
-def write_df_to_sheet(df, sheet_id, sheet_name, client):
+def write_df_to_sheet(df: pd.DataFrame, sheet_id: str, sheet_name: str, client: gspread.Client) -> None:
     """
     Writes a pandas DataFrame to a Google Sheet.
     """
@@ -22,7 +27,7 @@ def write_df_to_sheet(df, sheet_id, sheet_name, client):
     try:
         worksheet = spreadsheet.worksheet(sheet_name)
     except gspread.WorksheetNotFound:
-        worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="20")
+        worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=100, cols=20)
     
     worksheet.clear()
     # Replace NaN with empty string to avoid JSON compliance issues
