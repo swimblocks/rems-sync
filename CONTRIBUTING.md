@@ -1,6 +1,6 @@
-# Gemini CLI Instructions for the rems_sync Project
+# Contributing to rems-sync
 
-This file contains instructions and development standards for the Gemini CLI to follow when making changes to this repository.
+This file contains instructions and development standards for to follow when making changes to this repository.
 
 ## Core Principles
 
