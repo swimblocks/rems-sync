@@ -190,5 +190,20 @@ def upload_member_details(input_file, sheet_id, sheet_name):
     except Exception as e:
         click.echo(f"Error uploading member details: {e}", err=True)
 
+@cli.command()
+@click.option('--input-file', type=click.Path(exists=True), required=True, help='The CSV file to upload.')
+@click.option('--sheet-id', required=True, help='The Google Sheet ID to write to.')
+@click.option('--sheet-name', default='REMS Member Credentials', help='The name of the sheet to write to.')
+def upload_member_credentials(input_file, sheet_id, sheet_name):
+    """Uploads member credentials from a CSV file to a Google Sheet."""
+    click.echo(f"Uploading member credentials from {input_file} to sheet {sheet_id}...")
+    try:
+        df = pd.read_csv(input_file)
+        gsheet_client = get_gspread_client()
+        write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
+    except Exception as e:
+        click.echo(f"Error uploading member credentials: {e}", err=True)
+
+
 if __name__ == '__main__':
     cli()

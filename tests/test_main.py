@@ -156,3 +156,20 @@ def test_upload_member_details(mock_write_df, mock_get_client, runner, tmp_path)
     assert "Uploading member details from" in result.output
     mock_get_client.assert_called_once()
     mock_write_df.assert_called_once()
+
+@patch('src.main.get_gspread_client')
+@patch('src.main.write_df_to_sheet')
+def test_upload_member_credentials(mock_write_df, mock_get_client, runner, tmp_path):
+    input_file = tmp_path / "credentials.csv"
+    input_file.write_text("rems_id,member_id,member_season_id,name,type,first_name,last_name,status,start_date,expiry_date,actions\nSC12345678,456,789,Clinic,Type,First,Last,Active,28/01/2024,,/sportlomo/user/credentials/member-credential-history/231/178705/423, /sportlomo/user/credentials/view-member-credential-profile/231/178705/186777")
+    
+    result = runner.invoke(cli, [
+        'upload-member-credentials',
+        '--input-file', str(input_file),
+        '--sheet-id', 'test-sheet-id'
+    ])
+    
+    assert result.exit_code == 0
+    assert "Uploading member credentials from" in result.output
+    mock_get_client.assert_called_once()
+    mock_write_df.assert_called_once()
