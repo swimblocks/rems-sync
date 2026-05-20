@@ -13,12 +13,13 @@ def runner():
 def _positions_df():
     return pd.DataFrame([
         {'Official Name': 'Chris Fletcher', 'Official Position': 'Inspector of Turns',
+         'Official Club': 'ROW',
          'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'Kaoru Yajima',
          'Deck Eval Recorded?': '', 'Session': '6'},
-        {'Official Name': 'Jane Doe', 'Official Position': 'Starter',
+        {'Official Name': 'Jane Doe', 'Official Position': 'Starter', 'Official Club': 'ROW',
          'Deck Eval Success?': 'FALSE', 'Deck Eval Provider': '',
          'Deck Eval Recorded?': '', 'Session': '6'},
-        {'Official Name': 'Already Done', 'Official Position': 'Starter',
+        {'Official Name': 'Already Done', 'Official Position': 'Starter', 'Official Club': 'ROW',
          'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'Someone',
          'Deck Eval Recorded?': 'TRUE', 'Session': '6'},
     ])
@@ -130,10 +131,10 @@ def test_upload_deck_evals_happy_path(mock_mfa, mock_client_class, mock_get_gs,
 def test_upload_deck_evals_continues_on_failure(mock_mfa, mock_client_class, mock_get_gs,
                                                 mock_read_tab, mock_read_rows, mock_update_cell, runner):
     positions = pd.DataFrame([
-        {'Official Name': 'A B', 'Official Position': 'Inspector of Turns',
+        {'Official Name': 'A B', 'Official Position': 'Inspector of Turns', 'Official Club': 'ROW',
          'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P1',
          'Deck Eval Recorded?': '', 'Session': '6'},
-        {'Official Name': 'C D', 'Official Position': 'Starter',
+        {'Official Name': 'C D', 'Official Position': 'Starter', 'Official Club': 'ROW',
          'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P2',
          'Deck Eval Recorded?': '', 'Session': '6'},
     ])
@@ -329,10 +330,10 @@ def test_upload_deck_evals_interactive_quit_aborts_batch(mock_mfa, mock_client_c
                                                           mock_read_tab, mock_read_rows, mock_update_cell, runner):
     # Two pending rows; user quits at the first prompt.
     positions = pd.DataFrame([
-        {'Official Name': 'Chris Fletcher', 'Official Position': 'Inspector of Turns',
+        {'Official Name': 'Chris Fletcher', 'Official Position': 'Inspector of Turns', 'Official Club': 'ROW',
          'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P1',
          'Deck Eval Recorded?': '', 'Session': '6'},
-        {'Official Name': 'Other Person', 'Official Position': 'Starter',
+        {'Official Name': 'Other Person', 'Official Position': 'Starter', 'Official Club': 'ROW',
          'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P2',
          'Deck Eval Recorded?': '', 'Session': '6'},
     ])
@@ -386,11 +387,11 @@ def test_upload_deck_evals_recheck_verify_only(mock_mfa, mock_client_class, mock
     """--recheck never POSTs. Already-recorded rows tick the cell, missing rows are reported."""
     positions = pd.DataFrame([
         # Row 0: not in REMS yet -> MISSING in recheck mode
-        {'Official Name': 'A B', 'Official Position': 'Inspector of Turns',
+        {'Official Name': 'A B', 'Official Position': 'Inspector of Turns', 'Official Club': 'ROW',
          'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P1',
          'Deck Eval Recorded?': '', 'Session': '6'},
         # Row 1: already in REMS -> OK in recheck mode
-        {'Official Name': 'C D', 'Official Position': 'Starter',
+        {'Official Name': 'C D', 'Official Position': 'Starter', 'Official Club': 'ROW',
          'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P2',
          'Deck Eval Recorded?': 'TRUE', 'Session': '6'},
     ])
@@ -469,12 +470,66 @@ def test_upload_deck_evals_recheck_does_not_prompt_for_missing(mock_mfa, mock_cl
     mock_client.add_member_credential.assert_not_called()
 
 
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_filters_by_club(mock_mfa, mock_client_class, mock_get_gs,
+                                            mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """Only rows whose Official Club matches --rems-club are processed."""
+    positions = pd.DataFrame([
+        {'Official Name': 'Our Person', 'Official Position': 'Inspector of Turns', 'Official Club': 'ROW',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P1',
+         'Deck Eval Recorded?': '', 'Session': '6'},
+        {'Official Name': 'Visiting Person', 'Official Position': 'Starter', 'Official Club': 'OTHER',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P2',
+         'Deck Eval Recorded?': '', 'Session': '6'},
+    ])
+    _patch_sheet_reads(mock_read_tab, mock_read_rows, positions_df=positions)
+    # Officials map needs Our Person but not Visiting Person.
+    mock_read_rows.side_effect = lambda sheet_id, tab, client: {
+        'Grid': _grid_rows(),
+        'Meet': _meet_rows(),
+        'Officials': [
+            ['Form indicates available', 'Form name invalid', 'Email',
+             'Name', 'Timestamp', 'REMS ID', 'ROW Acct'],
+            ['TRUE', 'FALSE', 'a@b.com', 'Our Person', 't', 'SC11112222', ''],
+        ],
+    }[tab]
+
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC11112222', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = []
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+    ]
+    mock_client.add_member_credential.return_value = True
+
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--sheet-id', 'fake-id',
+    ])
+    assert result.exit_code == 0, result.output
+    assert "for club 'ROW'" in result.output
+    assert "1 other-club row(s) skipped" in result.output
+    mock_client.add_member_credential.assert_called_once()
+
+
 @patch('src.main.read_sheet_rows')
 @patch('src.main.read_sheet_tab')
 @patch('src.main.get_gspread_client')
 def test_upload_deck_evals_no_pending(mock_get_gs, mock_read_tab, mock_read_rows, runner):
     positions = pd.DataFrame([
-        {'Official Name': 'A B', 'Official Position': 'Starter',
+        {'Official Name': 'A B', 'Official Position': 'Starter', 'Official Club': 'ROW',
          'Deck Eval Success?': 'FALSE', 'Deck Eval Provider': '',
          'Deck Eval Recorded?': '', 'Session': '6'},
     ])
