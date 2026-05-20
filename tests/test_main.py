@@ -173,3 +173,304 @@ def test_upload_member_credentials(mock_write_df, mock_get_client, runner, tmp_p
     assert "Uploading member credentials from" in result.output
     mock_get_client.assert_called_once()
     mock_write_df.assert_called_once()
+
+
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_add_deck_eval_happy_path(mock_mfa, mock_client_class, runner):
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.search_member_by_name.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    # No existing IT evals → this will be #1
+    mock_client.get_member_credentials.return_value = [
+        {'type': 'Clinic', 'name': 'Some Clinic'},
+    ]
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '452', 'type_id': '127'},
+        {'label': 'Inspector of Turns Evaluation #2', 'credential_id': '453', 'type_id': '127'},
+    ]
+    mock_client.add_member_credential.return_value = True
+
+    result = runner.invoke(cli, [
+        'add-deck-eval',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--official-name', 'Chris Fletcher',
+        '--position', 'Inspector of Turns',
+        '--provider', 'Kaoru Yajima',
+        '--meet', 'Cunningham Classic 2026',
+        '--date', '2026-04-12',
+        '--description', 'Session 6',
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert 'Success: recorded deck eval #1' in result.output
+    mock_client.add_member_credential.assert_called_once_with(
+        member_season_id='685100',
+        member_id='178722',
+        credential_id='452',
+        type_id='127',
+        provider='Kaoru Yajima',
+        provider_identifier='Cunningham Classic 2026',
+        start_date='04/12/2026',
+        description='Session 6',
+    )
+
+
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_add_deck_eval_promotes_to_second_eval(mock_mfa, mock_client_class, runner):
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.search_member_by_name.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    # Existing #1 eval for IT → next is #2
+    mock_client.get_member_credentials.return_value = [
+        {'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #1'},
+    ]
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '452', 'type_id': '127'},
+        {'label': 'Inspector of Turns Evaluation #2', 'credential_id': '453', 'type_id': '127'},
+    ]
+    mock_client.add_member_credential.return_value = True
+
+    result = runner.invoke(cli, [
+        'add-deck-eval',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--official-name', 'Chris Fletcher',
+        '--position', 'Inspector of Turns',
+        '--provider', 'Kaoru Yajima',
+        '--meet', 'Cunningham Classic 2026',
+        '--date', '2026-04-12',
+        '--description', 'Session 6',
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert 'Success: recorded deck eval #2' in result.output
+    assert mock_client.add_member_credential.call_args.kwargs['credential_id'] == '453'
+
+
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_add_deck_eval_member_not_found(mock_mfa, mock_client_class, runner):
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.search_member_by_name.return_value = None
+
+    result = runner.invoke(cli, [
+        'add-deck-eval',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--official-name', 'Nobody Here',
+        '--position', 'Starter',
+        '--provider', 'p', '--meet', 'm', '--date', '2026-04-12', '--description', 'd',
+    ])
+
+    assert result.exit_code != 0
+    assert 'Could not find official' in result.output
+
+
+def _setup_chief_timer_existing(mock_client, details_by_id):
+    """Helper: member has two Chief Timekeeper evals; form offers #1 and #2.
+    details_by_id maps credential_id -> details dict returned by get_member_credential_details."""
+    mock_client.search_member_by_name.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = [
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1',
+         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/451'},
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #2',
+         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/452'},
+    ]
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Chief Timekeeper Evaluation #1', 'credential_id': '451', 'type_id': '127'},
+        {'label': 'Chief Timekeeper Evaluation #2', 'credential_id': '452', 'type_id': '127'},
+    ]
+    mock_client.get_member_credential_details.side_effect = lambda msid, mid, cid: details_by_id[str(cid)]
+
+
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_add_deck_eval_already_recorded_matching_meet(mock_mfa, mock_client_class, runner):
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    _setup_chief_timer_existing(mock_client, details_by_id={
+        '451': {'name': 'Chief Timekeeper Evaluation #1', 'provider_identifier': 'Old Meet 2024', 'description': 'Session 2'},
+        '452': {'name': 'Chief Timekeeper Evaluation #2',
+                'provider_identifier': 'Cunningham Classic 2026', 'description': 'Session 6'},
+    })
+
+    result = runner.invoke(cli, [
+        'add-deck-eval',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--official-name', 'Chris Fletcher',
+        '--position', 'Chief Timer',
+        '--provider', 'Kaoru Yajima',
+        '--meet', 'Cunningham Classic 2026',
+        '--date', '2026-04-12',
+        '--description', 'Session 6',
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert 'already recorded' in result.output.lower()
+    mock_client.add_member_credential.assert_not_called()
+
+
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_add_deck_eval_one_existing_matches_is_duplicate(mock_mfa, mock_client_class, runner):
+    """With only ONE existing matching eval, we still verify before adding 'eval #2'."""
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.search_member_by_name.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    # Only one existing eval, but it matches the meet+session we're about to add.
+    mock_client.get_member_credentials.return_value = [
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1',
+         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/451'},
+    ]
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Chief Timekeeper Evaluation #1', 'credential_id': '451', 'type_id': '127'},
+        {'label': 'Chief Timekeeper Evaluation #2', 'credential_id': '452', 'type_id': '127'},
+    ]
+    mock_client.get_member_credential_details.side_effect = lambda msid, mid, cid: {
+        '451': {'name': 'Chief Timekeeper Evaluation #1',
+                'provider_identifier': 'Cunningham Classic 2026', 'description': 'Session 6'},
+    }[str(cid)]
+
+    result = runner.invoke(cli, [
+        'add-deck-eval',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--official-name', 'Chris Fletcher',
+        '--position', 'Chief Timer',
+        '--provider', 'Kaoru Yajima',
+        '--meet', 'Cunningham Classic 2026',
+        '--date', '2026-04-12',
+        '--description', 'Session 6',
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert 'already recorded' in result.output.lower()
+    mock_client.add_member_credential.assert_not_called()
+
+
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_add_deck_eval_one_existing_different_meet_proceeds(mock_mfa, mock_client_class, runner):
+    """With one existing eval from a DIFFERENT meet/session, we proceed to add the next."""
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.search_member_by_name.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = [
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1',
+         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/451'},
+    ]
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Chief Timekeeper Evaluation #1', 'credential_id': '451', 'type_id': '127'},
+        {'label': 'Chief Timekeeper Evaluation #2', 'credential_id': '452', 'type_id': '127'},
+    ]
+    mock_client.get_member_credential_details.side_effect = lambda msid, mid, cid: {
+        '451': {'name': 'Chief Timekeeper Evaluation #1',
+                'provider_identifier': 'Old Meet 2024', 'description': 'Session 2'},
+    }[str(cid)]
+    mock_client.add_member_credential.return_value = True
+
+    result = runner.invoke(cli, [
+        'add-deck-eval',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--official-name', 'Chris Fletcher',
+        '--position', 'Chief Timer',
+        '--provider', 'Kaoru Yajima',
+        '--meet', 'Cunningham Classic 2026',
+        '--date', '2026-04-12',
+        '--description', 'Session 6',
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert 'Success' in result.output
+    # Should have looked up the existing eval's details to verify it's not a dup
+    mock_client.get_member_credential_details.assert_called_once_with('685100', '178722', '451')
+    # And then added the #2 credential
+    mock_client.add_member_credential.assert_called_once()
+    assert mock_client.add_member_credential.call_args.kwargs['credential_id'] == '452'
+
+
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_add_deck_eval_at_max_but_different_meet(mock_mfa, mock_client_class, runner):
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    _setup_chief_timer_existing(mock_client, details_by_id={
+        '451': {'name': 'Chief Timekeeper Evaluation #1', 'provider_identifier': 'Old Meet 2024', 'description': 'Session 2'},
+        '452': {'name': 'Chief Timekeeper Evaluation #2', 'provider_identifier': 'Other Meet 2025', 'description': 'Session 1'},
+    })
+
+    result = runner.invoke(cli, [
+        'add-deck-eval',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--official-name', 'Chris Fletcher',
+        '--position', 'Chief Timer',
+        '--provider', 'Kaoru Yajima',
+        '--meet', 'Cunningham Classic 2026',
+        '--date', '2026-04-12',
+        '--description', 'Session 6',
+    ])
+
+    assert result.exit_code != 0
+    assert 'max 2' in result.output.lower() or 'max' in result.output.lower()
+    assert 'resolve in rems' in result.output.lower()
+    mock_client.add_member_credential.assert_not_called()
+
+
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_add_deck_eval_dry_run_does_reads_but_no_post(mock_mfa, mock_client_class, runner):
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.search_member_by_name.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = []
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '452', 'type_id': '127'},
+    ]
+
+    result = runner.invoke(cli, [
+        'add-deck-eval',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--official-name', 'Chris Fletcher',
+        '--position', 'Inspector of Turns',
+        '--provider', 'p', '--meet', 'm', '--date', '2026-04-12', '--description', 'd',
+        '--dry-run',
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert '[dry-run]' in result.output
+    mock_client.login.assert_called_once()
+    mock_client.search_member_by_name.assert_called_once()
+    mock_client.get_add_credential_form_options.assert_called_once()
+    mock_client.add_member_credential.assert_not_called()
