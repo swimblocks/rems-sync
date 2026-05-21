@@ -196,9 +196,9 @@ Two commands write deck evaluations to REMS: `add-deck-eval` for a single record
 
 #### Authentication and the cookie cache
 
-The first authenticated command of a session triggers an MFA login. Cookies are cached to `~/.rems-sync/cookies.json` so subsequent runs reuse the session without prompting. When the cached session has lapsed, the tool retries with a "known device" login (using the `mfa_*` cookies REMS sets after MFA), which REMS honors by skipping the OTP. You'll only be prompted for an MFA code if REMS actually demands one (e.g. on a new device or after a full logout). A mid-batch 403 (Authentication-JWT expired during a long interactive session) triggers an automatic re-login and retry.
+The first authenticated command of a session triggers an MFA login. Cookies are cached to `~/.rems-sync/cookies.json` so subsequent runs reuse the session without prompting. You'll only be prompted for an MFA code when REMS actually demands one (e.g. on a new device or after a full logout). A mid-batch 403 (Authentication-JWT expired during a long interactive session) triggers an automatic re-login and retry.
 
-Run `python -m src.main login` to do nothing but log in (useful to warm the cache before a long batch).
+Run `python -m src.main login` to do nothing but log in (useful to warm the cache before a long batch). The full auth / MFA flow is documented in [docs/auth.md](docs/auth.md).
 
 #### `add-deck-eval` — single evaluation
 
