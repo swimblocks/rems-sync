@@ -24,6 +24,10 @@ from .utils import (
 class AlreadyRecordedError(click.ClickException):
     """Raised when an existing credential for this position covers one of the meet's session dates."""
 
+    def __init__(self, message, credential=None):
+        super().__init__(message)
+        self.credential = credential
+
 
 class NoMatchingCredentialError(click.ClickException):
     """Raised when no credential on the form matches the position. Carries the
@@ -92,7 +96,8 @@ def _resolve_deck_eval_credential(client, member_season_id, member_id, position,
     duplicate = find_existing_deck_eval_in_dates(existing, position, meet_session_dates)
     if duplicate is not None:
         raise AlreadyRecordedError(
-            f"already recorded (existing {duplicate.get('name')!r} on {duplicate.get('start_date')})"
+            f"already recorded (existing {duplicate.get('name')!r} on {duplicate.get('start_date')})",
+            credential=duplicate,
         )
 
     for opt in options:
@@ -112,6 +117,90 @@ def _resolve_deck_eval_credential(client, member_season_id, member_id, position,
         f"No credential option matching {expected_label!r} on add-credential form.",
         options=options,
     )
+
+
+def _credential_view_url(member_season_id, member_id, credential_id):
+    """Full REMS URL for viewing/editing a member credential — handy to print
+    so the user can verify what the tool's report refers to."""
+    return (f"{REMSClient.BASE_URL}/sportlomo/user/credentials/"
+            f"view-from-member-profile/{member_season_id}/{member_id}/{credential_id}")
+
+
+def _handle_swapped_eval(client, gsheet_client, sheet_id, positions_tab, row_idx,
+                          name, position, swap_cred,
+                          member_season_id, member_id, meet_dates,
+                          interactive, dry_run):
+    """Report a SWAPPED row, and if --interactive, offer to fix it via REMS edit.
+    Returns True if handled successfully (logged or fixed), False if the fix
+    was attempted and failed."""
+    existing_date = swap_cred.get('start_date', '?')
+    # The corrected date is the meet date whose day/month swap matches the existing one.
+    existing_iso = parse_rems_date_to_iso(existing_date)
+    correct_iso = next(
+        (d for d in meet_dates if _swap_day_month_for_match(d) == existing_iso),
+        None,
+    )
+    correct_rems_date = to_rems_date_format(correct_iso) if correct_iso else None
+    credential_id = _credential_id_from_swap(swap_cred)
+    url = _credential_view_url(member_season_id, member_id, credential_id) if credential_id else None
+
+    click.echo(
+        f"  SWAPPED row {row_idx} ({name} / {position}): existing "
+        f"{swap_cred.get('name')!r} has start_date {existing_date} "
+        f"(day/month swapped — legacy m/d/Y bug)"
+    )
+    if url:
+        click.echo(f"    {url}")
+
+    if not interactive or not correct_rems_date:
+        return True  # logged, no further action
+
+    if not credential_id:
+        click.echo("    (could not parse credential id from listing; fix manually in REMS)")
+        return True
+
+    click.echo(f"    Fix start_date to {correct_rems_date}? [y/N]")
+    choice = click.prompt("    Choose", default="n", show_default=True).strip().lower()
+    if choice not in ('y', 'yes'):
+        click.echo("    Leaving as-is.")
+        return True
+
+    if dry_run:
+        click.echo(f"    [dry-run] would POST update_member_credential start_date={correct_rems_date}")
+        return True
+
+    try:
+        client.update_member_credential(
+            member_season_id, member_id, credential_id,
+            field_overrides={"start_date": correct_rems_date},
+        )
+        click.echo(f"    OK: start_date updated to {correct_rems_date}")
+        return True
+    except Exception as e:
+        click.echo(f"    FAIL: update_member_credential raised: {e}", err=True)
+        return False
+
+
+def _swap_day_month_for_match(iso_date):
+    """Mirror utils._swap_day_month_iso for matching purposes. Returns the
+    swapped ISO date or None if either component is > 12 (unambiguous)."""
+    from datetime import date
+    try:
+        y, m, d = iso_date.split('-')
+        y, m, d = int(y), int(m), int(d)
+        if m > 12 or d > 12:
+            return None
+        return date(y, d, m).isoformat()
+    except (ValueError, AttributeError):
+        return None
+
+
+def _credential_id_from_swap(cred):
+    """Extract the credential id from the 'actions' URLs returned alongside the
+    credentials listing — view/edit URLs follow .../{msid}/{mid}/{cid}."""
+    actions = cred.get('actions') or ''
+    m = re.search(r'view-from-member-profile/\d+/\d+/(\d+)', actions)
+    return m.group(1) if m else None
 
 
 def _prompt_for_credential_family(options, sheet_position, row_idx, name, rems_id):
@@ -454,16 +543,22 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
             # may raise (e.g. at-max). A swap takes up a position slot in REMS,
             # so we want to flag it independently of whatever resolve would say.
             if recheck:
+                meet_dates_set = set(session_dates.values())
                 swap_cred = find_existing_deck_eval_with_swapped_date(
-                    cached_existing, position, set(session_dates.values()),
+                    cached_existing, position, meet_dates_set,
                 )
                 if swap_cred is not None:
-                    click.echo(
-                        f"  SWAPPED row {idx} ({name} / {position}): existing "
-                        f"{swap_cred.get('name')!r} has start_date {swap_cred.get('start_date')} "
-                        f"(day/month swapped — legacy m/d/Y bug; needs editing in REMS)"
+                    swap_handled = _handle_swapped_eval(
+                        client, gsheet_client, sheet_id, positions_tab, idx,
+                        name, position, swap_cred,
+                        member_season_id=member_season_id, member_id=member_id,
+                        meet_dates=meet_dates_set,
+                        interactive=interactive, dry_run=dry_run,
                     )
-                    failures += 1
+                    if swap_handled:
+                        successes += 1
+                    else:
+                        failures += 1
                     continue
 
             try:
@@ -474,6 +569,9 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
                 )
             except AlreadyRecordedError as e:
                 click.echo(f"  OK row {idx} ({name} / {position}): {e.message}")
+                cred_id = _credential_id_from_swap(e.credential or {})
+                if cred_id:
+                    click.echo(f"    {_credential_view_url(member_season_id, member_id, cred_id)}")
                 if not dry_run:
                     update_cell(sheet_id, positions_tab, idx, 'Deck Eval Recorded?', True, gsheet_client)
                 successes += 1
@@ -497,6 +595,9 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
                     )
                 except AlreadyRecordedError as e:
                     click.echo(f"  OK row {idx} ({name} / {chosen}): {e.message}")
+                    cred_id = _credential_id_from_swap(e.credential or {})
+                    if cred_id:
+                        click.echo(f"    {_credential_view_url(member_season_id, member_id, cred_id)}")
                     if not dry_run:
                         update_cell(sheet_id, positions_tab, idx, 'Deck Eval Recorded?', True, gsheet_client)
                     successes += 1
@@ -615,6 +716,9 @@ def add_deck_eval(username, password, season, official_name, rems_id, position, 
         )
     except AlreadyRecordedError as e:
         click.echo(f"Deck evaluation for {official_name} / {position} {e.message}.")
+        cred_id = _credential_id_from_swap(e.credential or {})
+        if cred_id:
+            click.echo(_credential_view_url(member_season_id, member_id, cred_id))
         return
 
     if dry_run:
