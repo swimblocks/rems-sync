@@ -566,24 +566,37 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
 
     overall_successes = 0
     overall_failures = 0
+    meets_skipped = 0
+    multi = len(sheets_to_process) > 1
     for sheet_entry in sheets_to_process:
         sheet_id = sheet_entry['id']
+        meet_label = sheet_entry.get('meet_name') or sheet_id
         if sheet_entry.get('meet_name'):
             click.echo(f"\n=== {sheet_entry['meet_name']} ({sheet_entry.get('name')}) ===")
 
-        successes, failures = _process_meet_sheet(
-            client, gsheet_client, sheet_id,
-            season=season, season_id=season_id,
-            positions_tab=positions_tab, grid_tab=grid_tab, meet_tab=meet_tab,
-            officials_tab=officials_tab, session_col=session_col,
-            rems_club=rems_club, meet_name_override=meet_name,
-            dry_run=dry_run, interactive=interactive, recheck=recheck,
-        )
+        try:
+            successes, failures = _process_meet_sheet(
+                client, gsheet_client, sheet_id,
+                season=season, season_id=season_id,
+                positions_tab=positions_tab, grid_tab=grid_tab, meet_tab=meet_tab,
+                officials_tab=officials_tab, session_col=session_col,
+                rems_club=rems_club, meet_name_override=meet_name,
+                dry_run=dry_run, interactive=interactive, recheck=recheck,
+            )
+        except click.ClickException as e:
+            # Don't crash the whole batch for one bad meet (missing tabs, etc.)
+            # when we have more sheets to process. Re-raise if processing only one.
+            if not multi:
+                raise
+            click.echo(f"  SKIP meet {meet_label!r}: {e.message}", err=True)
+            meets_skipped += 1
+            continue
         overall_successes += successes
         overall_failures += failures
 
-    if len(sheets_to_process) > 1:
-        click.echo(f"\nAll meets done: {overall_successes} succeeded, {overall_failures} failed.")
+    if multi:
+        skipped_note = f" ({meets_skipped} meets skipped)" if meets_skipped else ""
+        click.echo(f"\nAll meets done: {overall_successes} succeeded, {overall_failures} failed{skipped_note}.")
 
 
 def _process_meet_sheet(client, gsheet_client, sheet_id, *,
