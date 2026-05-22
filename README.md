@@ -247,7 +247,7 @@ python -m src.main upload-deck-evals \
 ```
 
 Flags:
-- `--sheet-id`: the meet's roster Google Sheet ID. **Optional** — when omitted, the tool searches the configured shared Drive folder for a season subfolder matching `--season`, lists the meet subfolders that contain an "Officials Roster" sheet, and prompts you to pick one.
+- `--sheet-id`: the meet's roster Google Sheet ID. **Optional** — when omitted, the tool searches the configured shared Drive folder for a season subfolder matching `--season` and gathers every meet subfolder that contains an "Officials Roster" sheet. With `--interactive`, you'll be prompted to pick one meet (`a` picks all of them, `q` quits). Without `--interactive`, every discovered meet is processed in turn — handy for a season-wide `--recheck`.
 - `--season-folder-id`: root Drive folder to search for season subfolders. Defaults to the hard-coded ROW shared drive. Only used when `--sheet-id` is not provided.
 - `--roster-name-substring`: substring used to identify the roster sheet inside a meet folder. Default `"Officials Roster"`.
 - `--rems-club`: only process rows whose `Official Club` column matches this value (case-insensitive). You can only add deck evaluations for officials registered under your own club in REMS, so the tool skips other-club rows by default. Defaults to `ROW`.

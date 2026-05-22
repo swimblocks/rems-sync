@@ -837,11 +837,11 @@ def test_upload_deck_evals_interactive_family_skip(
 @patch('src.main.find_drive_sheet_in_folder')
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
-def test_upload_deck_evals_discovers_meet_when_no_sheet_id(
+def test_upload_deck_evals_discovers_and_prompts_when_interactive(
         mock_mfa, mock_client_class,
         mock_find_sheet, mock_list_folders, mock_get_drive,
         mock_get_gs, mock_read_tab, mock_read_rows, mock_update_cell, runner):
-    """No --sheet-id: walk the Drive folder hierarchy and prompt for a meet."""
+    """No --sheet-id but --interactive: walk the Drive folder hierarchy and prompt for a meet."""
     # Two season folders, only one matches 2025-2026.
     # Inside the matching season, two meet subfolders: one with a roster, one without.
     def list_subfolders_side_effect(drive, folder_id, drive_id=None):
@@ -885,7 +885,8 @@ def test_upload_deck_evals_discovers_meet_when_no_sheet_id(
         '--season', '2025-2026',
         # No --sheet-id !
         '--season-folder-id', 'root',
-    ], input='1\n')
+        '--interactive',
+    ], input='1\ny\n')
 
     assert result.exit_code == 0, result.output
     assert 'Season folder: 2025-2026 Season' in result.output
@@ -895,6 +896,67 @@ def test_upload_deck_evals_discovers_meet_when_no_sheet_id(
     assert 'Pick a meet' in result.output
     # And the picked sheet id flowed through to the read calls.
     mock_read_tab.assert_any_call('sheet-abc', 'Positions', mock_get_gs.return_value)
+
+
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.get_drive_session')
+@patch('src.main.list_drive_subfolders')
+@patch('src.main.find_drive_sheet_in_folder')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_processes_all_meets_when_not_interactive(
+        mock_mfa, mock_client_class,
+        mock_find_sheet, mock_list_folders, mock_get_drive,
+        mock_get_gs, mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """No --sheet-id and no --interactive: process every discovered meet without prompting."""
+    def list_subfolders_side_effect(drive, folder_id, drive_id=None):
+        return {
+            'root': [{'id': 'season-2025', 'name': '2025-2026 Season'}],
+            'season-2025': [
+                {'id': 'meet-a', 'name': 'Meet A'},
+                {'id': 'meet-b', 'name': 'Meet B'},
+            ],
+        }[folder_id]
+    mock_list_folders.side_effect = list_subfolders_side_effect
+
+    def find_sheet_side_effect(drive, folder_id, substring, drive_id=None):
+        return {
+            'meet-a': {'id': 'sheet-a', 'name': 'Meet A Officials Roster'},
+            'meet-b': {'id': 'sheet-b', 'name': 'Meet B Officials Roster'},
+        }[folder_id]
+    mock_find_sheet.side_effect = find_sheet_side_effect
+
+    _patch_sheet_reads(mock_read_tab, mock_read_rows)
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = []
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+    ]
+    mock_client.add_member_credential.return_value = True
+
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--season-folder-id', 'root',
+        # No --interactive!
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert 'processing all' in result.output
+    assert 'Pick a meet' not in result.output
+    mock_read_tab.assert_any_call('sheet-a', 'Positions', mock_get_gs.return_value)
+    mock_read_tab.assert_any_call('sheet-b', 'Positions', mock_get_gs.return_value)
+    assert 'All meets done:' in result.output
 
 
 @patch('src.main.read_sheet_rows')
