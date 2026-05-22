@@ -259,6 +259,119 @@ def parse_officials_name_to_rems_id(rows):
     return out
 
 
+def ensure_columns_after(client, sheet_id, sheet_name, anchor, columns):
+    """Make sure each column in `columns` exists in the named tab, inserted
+    just after `anchor` if absent.
+
+    Each entry in `columns` is a dict with:
+      - 'name': the header value
+      - 'format' (optional): one of 'TEXT' (plain text cells) or
+        'CHECKBOX' (boolean data validation matching the typical Deck Eval
+        Success? checkbox).
+
+    Returns True if any column was added (caller should re-read the sheet).
+    Raises click.ClickException if the anchor isn't in the header row.
+    """
+    worksheet = _open_worksheet(client, sheet_id, sheet_name)
+    header = worksheet.row_values(1)
+    if anchor not in header:
+        raise click.ClickException(
+            f"Cannot place new columns: anchor {anchor!r} not in tab {sheet_name!r}."
+        )
+
+    added = False
+    # Each new column is inserted immediately after the previous column in the
+    # spec sequence (or after the user-provided anchor for the first one). This
+    # preserves the spec's relative order even when some columns are already
+    # in the sheet.
+    prev_col_name = anchor
+    for col_spec in columns:
+        name = col_spec['name']
+        # Re-read header each iteration because earlier inserts shift positions.
+        header = worksheet.row_values(1)
+        if name in header:
+            prev_col_name = name
+            continue
+        if prev_col_name not in header:
+            raise click.ClickException(
+                f"Cannot place {name!r}: previous column {prev_col_name!r} missing from tab {sheet_name!r}."
+            )
+
+        anchor_idx_1 = header.index(prev_col_name) + 1  # gspread is 1-based
+        new_col_idx_1 = anchor_idx_1 + 1
+
+        worksheet.insert_cols([[name]], col=new_col_idx_1)
+        added = True
+        click.echo(f"Added column {name!r} to tab {sheet_name!r}.", err=True)
+
+        fmt = col_spec.get('format')
+        if fmt == 'CHECKBOX':
+            _apply_boolean_validation(worksheet, new_col_idx_1)
+        elif fmt == 'TEXT':
+            _apply_text_format(worksheet, new_col_idx_1)
+
+        prev_col_name = name
+
+    return added
+
+
+def _apply_boolean_validation(worksheet, col_idx_1):
+    """Apply a BOOLEAN data validation rule (renders as a checkbox) to all
+    data cells in the given column (skipping the header row)."""
+    worksheet.spreadsheet.batch_update({
+        "requests": [{
+            "setDataValidation": {
+                "range": {
+                    "sheetId": worksheet.id,
+                    "startRowIndex": 1,  # skip header
+                    "startColumnIndex": col_idx_1 - 1,
+                    "endColumnIndex": col_idx_1,
+                },
+                "rule": {
+                    "condition": {"type": "BOOLEAN"},
+                    "showCustomUi": True,
+                    "strict": False,
+                },
+            }
+        }]
+    })
+
+
+def _apply_text_format(worksheet, col_idx_1):
+    """Force plain-text format on a column and clear any inherited data
+    validation. When inserting a column next to a checkbox column, Google
+    Sheets propagates the BOOLEAN data validation into the new column unless
+    we explicitly clear it — that's how Provider was ending up as a checkbox."""
+    target_range = {
+        "sheetId": worksheet.id,
+        "startRowIndex": 1,
+        "startColumnIndex": col_idx_1 - 1,
+        "endColumnIndex": col_idx_1,
+    }
+    worksheet.spreadsheet.batch_update({
+        "requests": [
+            # Clear any inherited data validation (e.g. checkbox).
+            {"setDataValidation": {"range": target_range}},
+            # Wipe any inherited cell values (e.g. FALSE strings left behind
+            # from a checkbox column that propagated into the new column).
+            {
+                "updateCells": {
+                    "range": target_range,
+                    "fields": "userEnteredValue",
+                }
+            },
+            # Plain-text number format.
+            {
+                "repeatCell": {
+                    "range": target_range,
+                    "cell": {"userEnteredFormat": {"numberFormat": {"type": "TEXT"}}},
+                    "fields": "userEnteredFormat.numberFormat",
+                }
+            },
+        ]
+    })
+
+
 def update_cell(sheet_id, sheet_name, row_index, col_name, value, client):
     """
     Write `value` to a single cell in the given tab.
