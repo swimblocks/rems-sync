@@ -1,5 +1,5 @@
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import click
 
 def parse_season_to_id(season_str):
@@ -63,6 +63,31 @@ def deck_eval_credential_label(position, eval_number):
     prefix = normalize_position_for_credential(position)
     return f"{prefix} Evaluation #{eval_number}"
 
+def find_existing_deck_eval_in_dates(credentials, position, dates):
+    """Return the first existing 'Deck Evaluation' credential for `position` whose
+    start_date falls within `dates` (set of YYYY-MM-DD strings), or None.
+
+    This is the single source of truth for "is this eval already recorded?"
+    Used by both `upload-deck-evals` (passes the meet's full session date set,
+    enforcing the rule that a position can only be evaluated once per meet) and
+    `add-deck-eval` (passes the specific date, or a wider set if the caller
+    provides --meet-dates).
+    """
+    if not dates:
+        return None
+    date_set = {d for d in dates if d}
+    prefix = normalize_position_for_credential(position).lower()
+    for cred in credentials:
+        cred_type = (cred.get('type') or '').strip().lower()
+        cred_name = (cred.get('name') or '').strip().lower()
+        if cred_type != 'deck evaluation' or not cred_name.startswith(prefix + ' '):
+            continue
+        iso = parse_rems_date_to_iso(cred.get('start_date'))
+        if iso and iso in date_set:
+            return cred
+    return None
+
+
 def count_existing_deck_evals(credentials, position):
     """
     Count how many existing 'Deck Evaluation' credentials this member has for the given position.
@@ -101,6 +126,31 @@ def to_mmddyyyy(value):
     if re.match(r'^\d{4}-\d{2}-\d{2}$', s):
         return datetime.strptime(s, "%Y-%m-%d").strftime("%m/%d/%Y")
     raise ValueError(f"Unsupported date format: {value!r} (use YYYY-MM-DD or MM/DD/YYYY)")
+
+
+def default_meet_dates_for(eval_iso_date):
+    """
+    Default meet-date set for an evaluation: the most recent Wednesday on or
+    before `eval_iso_date` through the next Sunday on or after `eval_iso_date`,
+    inclusive. Returns a set of YYYY-MM-DD strings.
+
+    If the eval falls on a non-meet day (Mon/Tue) the bracket will span more
+    than one week — in that case the caller should pass --meet-dates explicitly.
+    """
+    WED, SUN = 2, 6  # Monday is 0 via date.weekday()
+    d = datetime.strptime(eval_iso_date, "%Y-%m-%d").date()
+    start = d
+    while start.weekday() != WED:
+        start -= timedelta(days=1)
+    end = d
+    while end.weekday() != SUN:
+        end += timedelta(days=1)
+    out = set()
+    cur = start
+    while cur <= end:
+        out.add(cur.isoformat())
+        cur += timedelta(days=1)
+    return out
 
 
 def parse_rems_date_to_iso(value):

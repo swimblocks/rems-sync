@@ -13,8 +13,10 @@ from .utils import (
     validate_rems_id,
     deck_eval_credential_label,
     count_existing_deck_evals,
+    find_existing_deck_eval_in_dates,
     to_mmddyyyy,
     parse_rems_date_to_iso,
+    default_meet_dates_for,
 )
 
 
@@ -54,14 +56,13 @@ def _resolve_deck_eval_credential(client, member_season_id, member_id, position,
         and (c.get('name') or '').strip().lower().startswith(normalized_prefix + ' ')
     ]
 
-    if meet_session_dates:
-        date_set = {d for d in meet_session_dates if d}
-        for cred in matching_existing:
-            iso = parse_rems_date_to_iso(cred.get('start_date'))
-            if iso and iso in date_set:
-                raise AlreadyRecordedError(
-                    f"already recorded (existing {cred.get('name')!r} on {cred.get('start_date')})"
-                )
+    # Single source of truth for "is this eval already recorded?":
+    # any existing eval for this position whose start_date falls within the meet's dates.
+    duplicate = find_existing_deck_eval_in_dates(existing, position, meet_session_dates)
+    if duplicate is not None:
+        raise AlreadyRecordedError(
+            f"already recorded (existing {duplicate.get('name')!r} on {duplicate.get('start_date')})"
+        )
 
     for opt in options:
         if opt['label'].strip().lower() == expected_label.lower():
@@ -470,8 +471,13 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
 @click.option('--meet', required=True, help='Meet name; submitted as provider_identifier.')
 @click.option('--date', 'eval_date', required=True, help='Session date in YYYY-MM-DD or MM/DD/YYYY.')
 @click.option('--description', required=True, help='Free-form description, e.g. "Session 6".')
+@click.option('--meet-dates', default=None,
+              help='Comma-separated list of all the meet\'s session dates (YYYY-MM-DD or MM/DD/YYYY). '
+                   'When provided, the duplicate check rejects an add if any existing eval for the position '
+                   'falls on ANY of these dates, enforcing "no two evals for the same position at the same meet". '
+                   'When omitted, defaults to the Wed..Sun bracket around --date.')
 @click.option('--dry-run', is_flag=True, help='Print what would be posted without contacting REMS.')
-def add_deck_eval(username, password, season, official_name, rems_id, position, provider, meet, eval_date, description, dry_run):
+def add_deck_eval(username, password, season, official_name, rems_id, position, provider, meet, eval_date, description, meet_dates, dry_run):
     """Add a single deck evaluation for one named official."""
     season_id = parse_season_to_id(season)
     start_date = to_mmddyyyy(eval_date)
@@ -494,10 +500,20 @@ def add_deck_eval(username, password, season, official_name, rems_id, position, 
         raise click.ClickException(f"Could not resolve member_id for {official_name!r}.")
 
     iso_date = parse_rems_date_to_iso(eval_date)
+    if meet_dates:
+        date_set = {parse_rems_date_to_iso(d.strip()) for d in meet_dates.split(',') if d.strip()}
+        date_set.discard(None)
+        if iso_date:
+            date_set.add(iso_date)
+    elif iso_date:
+        # Default: bracket the eval date with the Wed-Sun the meet most likely covers.
+        date_set = default_meet_dates_for(iso_date)
+    else:
+        date_set = set()
     try:
         credential_id, type_id, eval_number, label = _resolve_deck_eval_credential(
             client, member_season_id, member_id, position,
-            meet_session_dates={iso_date} if iso_date else None,
+            meet_session_dates=date_set,
         )
     except AlreadyRecordedError as e:
         click.echo(f"Deck evaluation for {official_name} / {position} {e.message}.")

@@ -54,6 +54,32 @@ def test_normalize_position_for_credential():
     assert normalize_position_for_credential("Inspector of Turns") == "Inspector of Turns"
     assert normalize_position_for_credential("  Admin Desk  ") == "Administration Desk"
 
+def test_find_existing_deck_eval_in_dates():
+    from src.utils import find_existing_deck_eval_in_dates
+    credentials = [
+        {'type': 'Clinic',           'name': 'Inspector of Turns Clinic',           'start_date': '12/04/2026'},
+        {'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #1',     'start_date': '12/04/2026'},
+        {'type': 'Deck Evaluation', 'name': 'Starter Evaluation #1',                'start_date': '15/03/2024'},
+        {'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #2',     'start_date': '20/05/2025'},
+    ]
+    # Hit on the same meet date for the same position.
+    found = find_existing_deck_eval_in_dates(credentials, 'Inspector of Turns', {'2026-04-12'})
+    assert found is not None and found['name'] == 'Inspector of Turns Evaluation #1'
+    # Date outside the set → no match.
+    assert find_existing_deck_eval_in_dates(credentials, 'Inspector of Turns', {'2026-04-13'}) is None
+    # Wrong position → no match even if date matches.
+    assert find_existing_deck_eval_in_dates(credentials, 'Starter', {'2026-04-12'}) is None
+    # Position normalization works (Chief Timer -> Chief Timekeeper).
+    creds_ct = [{'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1', 'start_date': '12/04/2026'}]
+    assert find_existing_deck_eval_in_dates(creds_ct, 'Chief Timer', {'2026-04-12'}) is not None
+    # Empty / None dates -> no match (defensive).
+    assert find_existing_deck_eval_in_dates(credentials, 'Inspector of Turns', None) is None
+    assert find_existing_deck_eval_in_dates(credentials, 'Inspector of Turns', set()) is None
+    # Existing cred with unparseable start_date is skipped, not crashed on.
+    creds_bad = [{'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #1', 'start_date': 'garbage'}]
+    assert find_existing_deck_eval_in_dates(creds_bad, 'Inspector of Turns', {'2026-04-12'}) is None
+
+
 def test_count_existing_deck_evals():
     from src.utils import count_existing_deck_evals
     credentials = [
@@ -77,6 +103,28 @@ def test_to_mmddyyyy():
     assert to_mmddyyyy(date(2026, 4, 12)) == "04/12/2026"
     with pytest.raises(ValueError, match="Unsupported date format"):
         to_mmddyyyy("12-Apr-2026")
+
+
+def test_default_meet_dates_for():
+    from src.utils import default_meet_dates_for
+    # Friday Apr 10, 2026: meet brackets Wed Apr 8 -> Sun Apr 12.
+    assert default_meet_dates_for("2026-04-10") == {
+        "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-11", "2026-04-12",
+    }
+    # Wednesday itself: same 5-day bracket.
+    assert default_meet_dates_for("2026-04-08") == {
+        "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-11", "2026-04-12",
+    }
+    # Sunday itself: same 5-day bracket.
+    assert default_meet_dates_for("2026-04-12") == {
+        "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-11", "2026-04-12",
+    }
+    # Tuesday (off-meet): bracket spans two weeks (prev Wed -> next Sun).
+    # Tuesday Apr 14, 2026 -> Wed Apr 8 to Sun Apr 19.
+    tuesday_bracket = default_meet_dates_for("2026-04-14")
+    assert min(tuesday_bracket) == "2026-04-08"
+    assert max(tuesday_bracket) == "2026-04-19"
+    assert len(tuesday_bracket) == 12
 
 
 def test_parse_rems_date_to_iso():
