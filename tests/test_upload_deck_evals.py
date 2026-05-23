@@ -524,6 +524,166 @@ def test_upload_deck_evals_filters_by_club(mock_mfa, mock_client_class, mock_get
     mock_client.add_member_credential.assert_called_once()
 
 
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_no_match_error_is_short(mock_mfa, mock_client_class, mock_get_gs,
+                                                    mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """The 'no credential matching' error is one short sentence; no big Available list."""
+    positions = pd.DataFrame([
+        {'Official Name': 'Brad Hickey', 'Official Position': 'Standby', 'Official Club': 'ROW',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P',
+         'Deck Eval Recorded?': '', 'Session': '6'},
+    ])
+    _patch_sheet_reads(mock_read_tab, mock_read_rows, positions_df=positions)
+    mock_read_rows.side_effect = lambda sheet_id, tab, client: {
+        'Grid': _grid_rows(),
+        'Meet': _meet_rows(),
+        'Officials': [
+            ['Form indicates available', 'Form name invalid', 'Email',
+             'Name', 'Timestamp', 'REMS ID', 'ROW Acct'],
+            ['TRUE', 'FALSE', 'a@b.com', 'Brad Hickey', 't', 'SC44445555', ''],
+        ],
+    }[tab]
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC44445555', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = []
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+        {'label': 'Starter Evaluation #1', 'credential_id': '456', 'type_id': '127'},
+    ]
+
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--sheet-id', 'fake-id',
+    ])
+    assert result.exit_code == 0, result.output
+    assert "No credential option matching 'Standby Evaluation #1'" in result.output
+    # The long Available: ... list is gone.
+    assert 'Available:' not in result.output
+
+
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_interactive_prompts_for_family_on_no_match(
+        mock_mfa, mock_client_class, mock_get_gs,
+        mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """In --interactive, on no-match the user picks from a deduped family list."""
+    positions = pd.DataFrame([
+        {'Official Name': 'Brad Hickey', 'Official Position': 'Standby', 'Official Club': 'ROW',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P',
+         'Deck Eval Recorded?': '', 'Session': '6'},
+    ])
+    _patch_sheet_reads(mock_read_tab, mock_read_rows, positions_df=positions)
+    mock_read_rows.side_effect = lambda sheet_id, tab, client: {
+        'Grid': _grid_rows(),
+        'Meet': _meet_rows(),
+        'Officials': [
+            ['Form indicates available', 'Form name invalid', 'Email',
+             'Name', 'Timestamp', 'REMS ID', 'ROW Acct'],
+            ['TRUE', 'FALSE', 'a@b.com', 'Brad Hickey', 't', 'SC44445555', ''],
+        ],
+    }[tab]
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC44445555', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = []
+    # Two families: Inspector of Turns and Introduction to Swimming Officiating.
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+        {'label': 'Inspector of Turns Evaluation #2', 'credential_id': '443', 'type_id': '127'},
+        {'label': 'Introduction to Swimming Officiating Evaluation #1', 'credential_id': '441', 'type_id': '127'},
+        {'label': 'Introduction to Swimming Officiating Evaluation #2', 'credential_id': '444', 'type_id': '127'},
+    ]
+    mock_client.add_member_credential.return_value = True
+
+    # Pick option 2 (Introduction to Swimming Officiating) at the family prompt,
+    # then 'y' at the Submit? prompt.
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--sheet-id', 'fake-id',
+        '--interactive',
+    ], input='2\ny\n')
+
+    assert result.exit_code == 0, result.output
+    assert 'What credential was this evaluation for?' in result.output
+    assert 'Inspector of Turns' in result.output
+    assert 'Introduction to Swimming Officiating' in result.output
+    # The chosen family's #1 should have been POSTed.
+    mock_client.add_member_credential.assert_called_once()
+    assert mock_client.add_member_credential.call_args.kwargs['credential_id'] == '441'
+
+
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_interactive_family_skip(
+        mock_mfa, mock_client_class, mock_get_gs,
+        mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """At the family prompt, 's' (or Enter for default) skips the row."""
+    positions = pd.DataFrame([
+        {'Official Name': 'Brad Hickey', 'Official Position': 'Standby', 'Official Club': 'ROW',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P',
+         'Deck Eval Recorded?': '', 'Session': '6'},
+    ])
+    _patch_sheet_reads(mock_read_tab, mock_read_rows, positions_df=positions)
+    mock_read_rows.side_effect = lambda sheet_id, tab, client: {
+        'Grid': _grid_rows(),
+        'Meet': _meet_rows(),
+        'Officials': [
+            ['Form indicates available', 'Form name invalid', 'Email',
+             'Name', 'Timestamp', 'REMS ID', 'ROW Acct'],
+            ['TRUE', 'FALSE', 'a@b.com', 'Brad Hickey', 't', 'SC44445555', ''],
+        ],
+    }[tab]
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC44445555', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = []
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+    ]
+
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--sheet-id', 'fake-id',
+        '--interactive',
+    ], input='s\n')
+
+    assert result.exit_code == 0, result.output
+    assert 'no credential picked' in result.output
+    mock_client.add_member_credential.assert_not_called()
+
+
 @patch('src.main.read_sheet_rows')
 @patch('src.main.read_sheet_tab')
 @patch('src.main.get_gspread_client')
