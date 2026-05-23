@@ -278,37 +278,31 @@ def test_add_deck_eval_member_not_found(mock_mfa, mock_client_class, runner):
     assert 'Could not find official' in result.output
 
 
-def _setup_chief_timer_existing(mock_client, details_by_id):
+def _setup_chief_timer_existing(mock_client, existing_credentials):
     """Helper: member has two Chief Timekeeper evals; form offers #1 and #2.
-    details_by_id maps credential_id -> details dict returned by get_member_credential_details."""
+    existing_credentials is the list returned by get_member_credentials (must include start_date)."""
     mock_client.search_member_by_name.return_value = "685100"
     mock_client.get_member_details.return_value = {
         'rems_id': 'SC24176410', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
-    mock_client.get_member_credentials.return_value = [
-        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1',
-         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/451'},
-        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #2',
-         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/452'},
-    ]
+    mock_client.get_member_credentials.return_value = existing_credentials
     mock_client.get_add_credential_form_options.return_value = [
         {'label': 'Chief Timekeeper Evaluation #1', 'credential_id': '451', 'type_id': '127'},
         {'label': 'Chief Timekeeper Evaluation #2', 'credential_id': '452', 'type_id': '127'},
     ]
-    mock_client.get_member_credential_details.side_effect = lambda msid, mid, cid: details_by_id[str(cid)]
 
 
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
-def test_add_deck_eval_already_recorded_matching_meet(mock_mfa, mock_client_class, runner):
+def test_add_deck_eval_already_recorded_matching_date(mock_mfa, mock_client_class, runner):
+    """An existing eval on the same date is treated as already recorded (regardless of meet name)."""
     mock_client = MagicMock()
     mock_client_class.return_value = mock_client
-    _setup_chief_timer_existing(mock_client, details_by_id={
-        '451': {'name': 'Chief Timekeeper Evaluation #1', 'provider_identifier': 'Old Meet 2024', 'description': 'Session 2'},
-        '452': {'name': 'Chief Timekeeper Evaluation #2',
-                'provider_identifier': 'Cunningham Classic 2026', 'description': 'Session 6'},
-    })
+    _setup_chief_timer_existing(mock_client, existing_credentials=[
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1', 'start_date': '15/03/2024'},
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #2', 'start_date': '12/04/2026'},
+    ])
 
     result = runner.invoke(cli, [
         'add-deck-eval',
@@ -329,8 +323,8 @@ def test_add_deck_eval_already_recorded_matching_meet(mock_mfa, mock_client_clas
 
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
-def test_add_deck_eval_one_existing_matches_is_duplicate(mock_mfa, mock_client_class, runner):
-    """With only ONE existing matching eval, we still verify before adding 'eval #2'."""
+def test_add_deck_eval_one_existing_same_date_is_duplicate(mock_mfa, mock_client_class, runner):
+    """With one existing eval on the requested date, dedup catches it as a duplicate."""
     mock_client = MagicMock()
     mock_client_class.return_value = mock_client
     mock_client.search_member_by_name.return_value = "685100"
@@ -338,19 +332,13 @@ def test_add_deck_eval_one_existing_matches_is_duplicate(mock_mfa, mock_client_c
         'rems_id': 'SC24176410', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
-    # Only one existing eval, but it matches the meet+session we're about to add.
     mock_client.get_member_credentials.return_value = [
-        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1',
-         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/451'},
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1', 'start_date': '12/04/2026'},
     ]
     mock_client.get_add_credential_form_options.return_value = [
         {'label': 'Chief Timekeeper Evaluation #1', 'credential_id': '451', 'type_id': '127'},
         {'label': 'Chief Timekeeper Evaluation #2', 'credential_id': '452', 'type_id': '127'},
     ]
-    mock_client.get_member_credential_details.side_effect = lambda msid, mid, cid: {
-        '451': {'name': 'Chief Timekeeper Evaluation #1',
-                'provider_identifier': 'Cunningham Classic 2026', 'description': 'Session 6'},
-    }[str(cid)]
 
     result = runner.invoke(cli, [
         'add-deck-eval',
@@ -371,8 +359,8 @@ def test_add_deck_eval_one_existing_matches_is_duplicate(mock_mfa, mock_client_c
 
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
-def test_add_deck_eval_one_existing_different_meet_proceeds(mock_mfa, mock_client_class, runner):
-    """With one existing eval from a DIFFERENT meet/session, we proceed to add the next."""
+def test_add_deck_eval_one_existing_different_date_proceeds(mock_mfa, mock_client_class, runner):
+    """With one existing eval on a DIFFERENT date, we proceed to add the next eval."""
     mock_client = MagicMock()
     mock_client_class.return_value = mock_client
     mock_client.search_member_by_name.return_value = "685100"
@@ -381,17 +369,12 @@ def test_add_deck_eval_one_existing_different_meet_proceeds(mock_mfa, mock_clien
         'member_season_id': '685100', 'season_id': 232,
     }
     mock_client.get_member_credentials.return_value = [
-        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1',
-         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/451'},
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1', 'start_date': '15/03/2024'},
     ]
     mock_client.get_add_credential_form_options.return_value = [
         {'label': 'Chief Timekeeper Evaluation #1', 'credential_id': '451', 'type_id': '127'},
         {'label': 'Chief Timekeeper Evaluation #2', 'credential_id': '452', 'type_id': '127'},
     ]
-    mock_client.get_member_credential_details.side_effect = lambda msid, mid, cid: {
-        '451': {'name': 'Chief Timekeeper Evaluation #1',
-                'provider_identifier': 'Old Meet 2024', 'description': 'Session 2'},
-    }[str(cid)]
     mock_client.add_member_credential.return_value = True
 
     result = runner.invoke(cli, [
@@ -408,22 +391,19 @@ def test_add_deck_eval_one_existing_different_meet_proceeds(mock_mfa, mock_clien
 
     assert result.exit_code == 0, result.output
     assert 'Success' in result.output
-    # Should have looked up the existing eval's details to verify it's not a dup
-    mock_client.get_member_credential_details.assert_called_once_with('685100', '178722', '451')
-    # And then added the #2 credential
     mock_client.add_member_credential.assert_called_once()
     assert mock_client.add_member_credential.call_args.kwargs['credential_id'] == '452'
 
 
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
-def test_add_deck_eval_at_max_but_different_meet(mock_mfa, mock_client_class, runner):
+def test_add_deck_eval_at_max_but_different_dates(mock_mfa, mock_client_class, runner):
     mock_client = MagicMock()
     mock_client_class.return_value = mock_client
-    _setup_chief_timer_existing(mock_client, details_by_id={
-        '451': {'name': 'Chief Timekeeper Evaluation #1', 'provider_identifier': 'Old Meet 2024', 'description': 'Session 2'},
-        '452': {'name': 'Chief Timekeeper Evaluation #2', 'provider_identifier': 'Other Meet 2025', 'description': 'Session 1'},
-    })
+    _setup_chief_timer_existing(mock_client, existing_credentials=[
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1', 'start_date': '15/03/2024'},
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #2', 'start_date': '20/05/2025'},
+    ])
 
     result = runner.invoke(cli, [
         'add-deck-eval',
@@ -438,7 +418,7 @@ def test_add_deck_eval_at_max_but_different_meet(mock_mfa, mock_client_class, ru
     ])
 
     assert result.exit_code != 0
-    assert 'max 2' in result.output.lower() or 'max' in result.output.lower()
+    assert 'max' in result.output.lower()
     assert 'resolve in rems' in result.output.lower()
     mock_client.add_member_credential.assert_not_called()
 

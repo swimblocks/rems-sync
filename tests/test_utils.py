@@ -78,3 +78,19 @@ def test_to_mmddyyyy():
     with pytest.raises(ValueError, match="Unsupported date format"):
         to_mmddyyyy("12-Apr-2026")
 
+
+def test_parse_rems_date_to_iso():
+    from src.utils import parse_rems_date_to_iso
+    from datetime import date
+    # REMS displays dates in d/m/Y format (per flatpickr config)
+    assert parse_rems_date_to_iso("12/04/2026") == "2026-04-12"
+    assert parse_rems_date_to_iso("1/4/2026") == "2026-04-01"
+    # ISO passes through
+    assert parse_rems_date_to_iso("2026-04-12") == "2026-04-12"
+    # date object
+    assert parse_rems_date_to_iso(date(2026, 4, 12)) == "2026-04-12"
+    # blanks / unparseable -> None (so dedup can skip the row rather than crash)
+    assert parse_rems_date_to_iso("") is None
+    assert parse_rems_date_to_iso(None) is None
+    assert parse_rems_date_to_iso("garbage") is None
+
