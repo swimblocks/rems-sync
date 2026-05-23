@@ -1,123 +1,52 @@
-# REMS Sync
+# rems-sync
 
 [![ci](https://github.com/gavinbee/rems-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/gavinbee/rems-sync/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-This project is a Python-based CLI tool to synchronize data from the Swimming Canada REMS system.
+Python CLI that syncs data between Swimming Canada's **REMS / SportLomo** officials registry and Google Sheets. Pulls members, member details, and credentials out of REMS for reporting; pushes deck evaluations from a meet's roster sheet back into REMS.
+
+## Prerequisites
+
+- **Python 3.12+**
+- **Google Cloud CLI** (`gcloud`) — needed for the Application Default Credentials login, _not_ for any GCP project. Install via [cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install); platform shortcuts: [Windows](https://cloud.google.com/sdk/docs/install#windows) · [macOS](https://cloud.google.com/sdk/docs/install#mac) · [Linux](https://cloud.google.com/sdk/docs/install#linux).
+- A **REMS / SportLomo officials-portal login** with permission to manage your club's officials.
+- **Editor access** to the target Google Sheet (whoever owns the sheet shares it with the Google account you'll log into below).
+
+## Quick start
+
+```bash
+git clone https://github.com/gavinbee/rems-sync.git
+cd rems-sync
+python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# One-time Google auth — uses your own account, no GCP project required:
+gcloud auth application-default login
+
+# Smoke-test the REMS login (warms the cookie cache so later commands skip MFA):
+python -m src.main login --username <user> --password <pw>
+```
+
+The first authenticated REMS command of a session triggers an MFA prompt. Cookies are cached to `~/.rems-sync/cookies.json` so subsequent runs reuse the session without prompting.
+
+> Running unattended in the cloud? You'll want a service account, not user OAuth. See [docs/cloud-setup.md](docs/cloud-setup.md). For interactive workstation use the user OAuth above is enough.
 
 ## Features
 
-- Log in to the REMS system with MFA support.
-- Refresh REMS members list, outputting to CSV or Google Sheet.
-- Refresh REMS member details, outputting to CSV or Google Sheet.
-- Refresh REMS member credentials, outputting to CSV or Google Sheet.
-- Upload members, details, or credentials from CSV to a Google Sheet
-- Upload deck evaluations to REMS, either one at a time or in bulk from a meet's positions sheet
+- Log in to REMS with MFA support.
+- Refresh REMS members list, member details, and credentials — output to CSV or Google Sheet.
+- Upload members, details, or credentials from CSV to a Google Sheet.
+- Upload deck evaluations to REMS, either one at a time or in bulk from a meet's roster sheet.
 
-## Installation
+## Documentation
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your_username/rems-sync.git
-    cd rems-sync
-    ```
-2.  **Create and activate a virtual environment:**
-    ```bash
-    python -m venv .venv
-    ```
+- [Authentication & MFA flow](docs/auth.md) — how REMS login + cookie cache + auto-reauth work end-to-end
+- [Deck evaluation upload](docs/deck-eval-upload.md) — design and behaviour of `add-deck-eval` / `upload-deck-evals`
+- [Cloud setup (optional)](docs/cloud-setup.md) — Terraform + service-account scaffolding for a future scheduled deployment ([#63](https://github.com/gavinbee/rems-sync/issues/63))
 
-    Activate the virtual environment:
+## Contributing
 
-    <details open>
-    <summary><strong>Windows</strong></summary>
-
-    **Command Prompt:**
-    ```cmd
-    .venv\Scripts\activate
-    ```
-
-    **PowerShell:**
-    ```powershell
-    .venv\Scripts\Activate.ps1
-    ```
-    </details>
-
-    <details>
-    <summary><strong>Linux/macOS</strong></summary>
-
-    ```bash
-    source .venv/bin/activate
-    ```
-    </details>
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-## GCP Setup with Terraform
-
-To use this tool, you need a Google Cloud Platform (GCP) project with the necessary APIs enabled and a service account with the correct permissions. You can use the provided Terraform configuration to automate this setup.
-
-### Prerequisites
-
-1.  **Install Terraform:**
-    Follow the instructions [here](https://learn.hashicorp.com/tutorials/terraform/install-cli) to install the Terraform CLI.
-2.  **Install the Google Cloud CLI:**
-    Follow the instructions [here](https://cloud.google.com/sdk/docs/install) to install the `gcloud` CLI.
-3.  **Authenticate with Google Cloud:**
-    Run the following command in your terminal and follow the prompts to authenticate with your Google account:
-    ```bash
-    gcloud auth login
-    gcloud auth application-default login
-    ```
-4.  **Create a GCP Project:**
-    If you don't already have a GCP project, create one using the `gcloud` CLI:
-    ```bash
-    gcloud projects create <your_project_id>
-    ```
-    Replace `<your_project_id>` with a unique ID for your project.
-
-### Provisioning the Infrastructure
-
-1.  **Navigate to the `terraform` directory:**
-    ```bash
-    cd terraform
-    ```
-2.  **Initialize Terraform:**
-    ```bash
-    terraform init
-    ```
-3.  **Create a `terraform.tfvars` file:**
-    Create a file named `terraform.tfvars` in the `terraform` directory and add the following content:
-    ```
-    project_id = "<your_project_id>"
-    ```
-    Replace `<your_project_id>` with the ID of your GCP project.
-4.  **Apply the Terraform configuration:**
-    ```bash
-    terraform apply
-    ```
-    Terraform will show you a plan of the resources it will create. Type `yes` to approve the plan.
-5.  **Get the service account email:**
-    After the `apply` command completes, Terraform will output the email address of the created service account. You will need this to share your Google Sheet with the service account.
-    ```
-    Outputs:
-
-    service_account_email = "rems-sync-sa@<your_project_id>.iam.gserviceaccount.com"
-    ```
-
-### After Provisioning
-
-Once the infrastructure is provisioned, you need to:
-
-1.  **Share your Google Sheet:**
-    Share your Google Sheet with the service account email address and give it "Editor" permissions.
-2.  **Set up Application Default Credentials (ADC) with Impersonation:**
-    To test with the service account's identity locally without downloading a JSON key, use service account impersonation. First, ensure your user has the `roles/iam.serviceAccountTokenCreator` role on the service account (or project). Then run:
-    ```bash
-    gcloud auth application-default login --impersonate-service-account=rems-sync-sa@<your_project_id>.iam.gserviceaccount.com
-    ```
-    This ensures that the `rems-sync` CLI runs with the exact permissions of the service account, verifying the "least privilege" setup.
+See [CONTRIBUTING.md](CONTRIBUTING.md). One issue → one branch (`{issue-number}-{slug}`) → one PR.
 
 ## Usage
 
