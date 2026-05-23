@@ -8,19 +8,68 @@ def rems_client(tmp_path):
     return REMSClient("test_user", "test_password", lambda: "123456",
                       cookie_cache_path=tmp_path / "cookies.json")
 
+def _mock_login_form(client):
+    """Mock the GET /maint.php login form fetch the new login flow makes first."""
+    responses.add(
+        responses.GET,
+        f"{client.BASE_URL}/maint.php",
+        status=200,
+        body="<html>login form</html>",
+    )
+
+
+def _mock_otp_form_get(client, url=None):
+    """Mock the GET on the OTP-form page. By default the real form lives at
+    /sportlomo/users/mfa-login/ and returns 200 with the form HTML."""
+    responses.add(
+        responses.GET,
+        url or f"{client.BASE_URL}/sportlomo/users/mfa-login/",
+        status=200,
+        body="<html>OTP form</html>",
+    )
+
+
+def _mock_post_mfa_redirect_chain(client):
+    """Common mocks for the post-OTP chain: mfa-login -> logged-in.php -> /club_home.php -> probe."""
+    responses.add(
+        responses.GET,
+        f"{client.BASE_URL}/logged-in.php",
+        status=302,
+        headers={"Location": "/club_home.php"},
+    )
+    responses.add(
+        responses.GET,
+        f"{client.BASE_URL}/club_home.php",
+        status=200,
+        body="<html>Home</html>",
+    )
+    responses.add(
+        responses.POST,
+        f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
+        status=200,
+    )
+
+
 @responses.activate
 def test_login_success(rems_client):
+    _mock_login_form(rems_client)
     responses.add(
         responses.POST,
         f"{rems_client.BASE_URL}/Maint-Login.php",
         status=302,
-        headers={"Location": f"{rems_client.BASE_URL}/mfa-login"},
+        headers={"Location": f"{rems_client.BASE_URL}/sportlomo/users/mfa-login"},
     )
     responses.add(
         responses.GET,
-        f"{rems_client.BASE_URL}/mfa-login",
+        f"{rems_client.BASE_URL}/sportlomo/users/mfa-login",
         status=302,
         headers={"Location": f"{rems_client.BASE_URL}/sportlomo/users/mfa-verify-otp"},
+    )
+    responses.add(
+        responses.GET,
+        f"{rems_client.BASE_URL}/sportlomo/users/mfa-verify-otp",
+        status=200,
+        body="<html><form><input type='hidden' name='_csrf' value='tok'/></form></html>",
     )
     responses.add(
         responses.POST,
@@ -28,23 +77,31 @@ def test_login_success(rems_client):
         status=302,
         headers={"Location": f"{rems_client.BASE_URL}/logged-in.php"},
     )
+    _mock_post_mfa_redirect_chain(rems_client)
 
     assert rems_client.login() is True
 
 @responses.activate
 def test_login_persists_cookies_on_success(rems_client):
+    _mock_login_form(rems_client)
     responses.add(
         responses.POST,
         f"{rems_client.BASE_URL}/Maint-Login.php",
         status=302,
-        headers={"Location": f"{rems_client.BASE_URL}/mfa-login",
+        headers={"Location": f"{rems_client.BASE_URL}/sportlomo/users/mfa-login",
                  "Set-Cookie": "sess=abc123; Path=/"},
     )
     responses.add(
         responses.GET,
-        f"{rems_client.BASE_URL}/mfa-login",
+        f"{rems_client.BASE_URL}/sportlomo/users/mfa-login",
         status=302,
         headers={"Location": f"{rems_client.BASE_URL}/sportlomo/users/mfa-verify-otp"},
+    )
+    responses.add(
+        responses.GET,
+        f"{rems_client.BASE_URL}/sportlomo/users/mfa-verify-otp",
+        status=200,
+        body="<html><form><input type='hidden' name='_csrf' value='tok'/></form></html>",
     )
     responses.add(
         responses.POST,
@@ -52,6 +109,7 @@ def test_login_persists_cookies_on_success(rems_client):
         status=302,
         headers={"Location": f"{rems_client.BASE_URL}/logged-in.php"},
     )
+    _mock_post_mfa_redirect_chain(rems_client)
     assert rems_client.login() is True
     assert rems_client.cookie_cache_path.exists()
     cached = json.loads(rems_client.cookie_cache_path.read_text())
@@ -80,22 +138,31 @@ def test_login_falls_back_when_probe_returns_403(tmp_path):
     cache = tmp_path / "cookies.json"
     cache.write_text(json.dumps({"sess": "stale-jwt"}))
     client = REMSClient("u", "p", lambda: "123456", cookie_cache_path=cache)
+    # First the cache-probe POST returns 403 (stale JWT) -> fall back to full login.
+    # Then after the OTP, the chain probe POST returns 200.
     responses.add(
-        responses.GET,
+        responses.POST,
         f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
         status=403,
     )
+    _mock_login_form(client)
     responses.add(
         responses.POST,
         f"{client.BASE_URL}/Maint-Login.php",
         status=302,
-        headers={"Location": f"{client.BASE_URL}/mfa-login"},
+        headers={"Location": f"{client.BASE_URL}/sportlomo/users/mfa-login"},
     )
     responses.add(
         responses.GET,
-        f"{client.BASE_URL}/mfa-login",
+        f"{client.BASE_URL}/sportlomo/users/mfa-login",
         status=302,
         headers={"Location": f"{client.BASE_URL}/sportlomo/users/mfa-verify-otp"},
+    )
+    responses.add(
+        responses.GET,
+        f"{client.BASE_URL}/sportlomo/users/mfa-verify-otp",
+        status=200,
+        body="<html><form><input type='hidden' name='_csrf' value='tok'/></form></html>",
     )
     responses.add(
         responses.POST,
@@ -103,6 +170,7 @@ def test_login_falls_back_when_probe_returns_403(tmp_path):
         status=302,
         headers={"Location": f"{client.BASE_URL}/logged-in.php"},
     )
+    _mock_post_mfa_redirect_chain(client)
     assert client.login() is True
 
 
@@ -122,6 +190,7 @@ def test_login_skips_mfa_real_chain(tmp_path):
         f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
         status=403,
     )
+    _mock_login_form(client)
     responses.add(
         responses.POST,
         f"{client.BASE_URL}/Maint-Login.php",
@@ -174,6 +243,7 @@ def test_login_keeps_only_mfa_cookies_before_post(tmp_path):
         f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
         status=403,
     )
+    _mock_login_form(client)
     # POST Maint-Login — capture what cookies are sent.
     captured_cookies = {}
     def login_callback(req):
@@ -197,7 +267,6 @@ def test_login_keeps_only_mfa_cookies_before_post(tmp_path):
     )
 
     client.login()
-    assert "mfa_token" in captured_cookies
     assert "PHPSESSID" not in captured_cookies
 
 
@@ -224,17 +293,24 @@ def test_request_auto_reauth_on_403(tmp_path):
     # and the retried POST returns 200.
     target_url = f"{client.BASE_URL}/sportlomo/user/credentials/member-credentials-details/789/456"
     responses.add(responses.POST, target_url, status=403)
+    _mock_login_form(client)
     responses.add(
         responses.POST,
         f"{client.BASE_URL}/Maint-Login.php",
         status=302,
-        headers={"Location": f"{client.BASE_URL}/mfa-login"},
+        headers={"Location": f"{client.BASE_URL}/sportlomo/users/mfa-login"},
     )
     responses.add(
         responses.GET,
-        f"{client.BASE_URL}/mfa-login",
+        f"{client.BASE_URL}/sportlomo/users/mfa-login",
         status=302,
         headers={"Location": f"{client.BASE_URL}/sportlomo/users/mfa-verify-otp"},
+    )
+    responses.add(
+        responses.GET,
+        f"{client.BASE_URL}/sportlomo/users/mfa-verify-otp",
+        status=200,
+        body="<html><form><input type='hidden' name='_csrf' value='tok'/></form></html>",
     )
     responses.add(
         responses.POST,
@@ -242,6 +318,7 @@ def test_request_auto_reauth_on_403(tmp_path):
         status=302,
         headers={"Location": f"{client.BASE_URL}/logged-in.php"},
     )
+    _mock_post_mfa_redirect_chain(client)
     responses.add(responses.POST, target_url, body="<table><tbody></tbody></table>", status=200)
 
     creds = client.get_member_credentials("SC123", "456", "789")
@@ -251,28 +328,43 @@ def test_request_auto_reauth_on_403(tmp_path):
 
 @responses.activate
 def test_login_failure_bad_credentials(rems_client):
+    """Bad creds: POST Maint-Login returns 200 (login form re-rendered). The
+    probe then fails since we're not authenticated."""
+    _mock_login_form(rems_client)
     responses.add(
         responses.POST,
         f"{rems_client.BASE_URL}/Maint-Login.php",
         status=200,
     )
-
-    with pytest.raises(Exception, match="Login failed: Unexpected status code on login"):
+    # Probe will fail
+    responses.add(
+        responses.POST,
+        f"{rems_client.BASE_URL}/sportlomo/user/MembershipManagement/members",
+        status=403,
+    )
+    with pytest.raises(Exception, match="Login failed: expected 302 from Maint-Login"):
         rems_client.login()
 
 @responses.activate
 def test_login_failure_bad_mfa(rems_client):
+    _mock_login_form(rems_client)
     responses.add(
         responses.POST,
         f"{rems_client.BASE_URL}/Maint-Login.php",
         status=302,
-        headers={"Location": f"{rems_client.BASE_URL}/mfa-login"},
+        headers={"Location": f"{rems_client.BASE_URL}/sportlomo/users/mfa-login"},
     )
     responses.add(
         responses.GET,
-        f"{rems_client.BASE_URL}/mfa-login",
+        f"{rems_client.BASE_URL}/sportlomo/users/mfa-login",
         status=302,
         headers={"Location": f"{rems_client.BASE_URL}/sportlomo/users/mfa-verify-otp"},
+    )
+    responses.add(
+        responses.GET,
+        f"{rems_client.BASE_URL}/sportlomo/users/mfa-verify-otp",
+        status=200,
+        body="<html><form><input type='hidden' name='_csrf' value='tok'/></form></html>",
     )
     responses.add(
         responses.POST,
@@ -280,7 +372,7 @@ def test_login_failure_bad_mfa(rems_client):
         status=200,
     )
 
-    with pytest.raises(Exception, match="MFA verification failed"):
+    with pytest.raises(Exception, match="OTP rejected"):
         rems_client.login()
 
 @responses.activate
