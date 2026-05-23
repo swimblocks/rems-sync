@@ -1,8 +1,10 @@
+from unittest.mock import MagicMock, patch
+
 import click
 import pandas as pd
 import pytest
 from click.testing import CliRunner
-from unittest.mock import patch, MagicMock
+
 from src.main import cli
 
 

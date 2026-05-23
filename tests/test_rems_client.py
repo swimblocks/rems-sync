@@ -1,7 +1,10 @@
+import json
+
 import pytest
 import responses
-import json
+
 from src.rems_client import REMSClient
+
 
 @pytest.fixture
 def rems_client(tmp_path):

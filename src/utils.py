@@ -1,6 +1,8 @@
 import re
 from datetime import date, datetime, timedelta
+
 import click
+
 
 def parse_season_to_id(season_str):
     """
