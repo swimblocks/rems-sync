@@ -233,7 +233,7 @@ Reads a meet's Google Sheet, uploads every pending deck evaluation to REMS, and 
 python -m src.main upload-deck-evals \
   --username <user> --password <pw> \
   --season 2025-2026 \
-  --sheet-id <google_sheet_id> \
+  [--sheet-id <google_sheet_id>] \
   [--positions-tab Positions] \
   [--grid-tab Grid] \
   [--meet-tab Meet] \
@@ -247,6 +247,9 @@ python -m src.main upload-deck-evals \
 ```
 
 Flags:
+- `--sheet-id`: the meet's roster Google Sheet ID. **Optional** — when omitted, the tool searches the configured shared Drive folder for a season subfolder matching `--season`, lists the meet subfolders that contain an "Officials Roster" sheet, and prompts you to pick one.
+- `--season-folder-id`: root Drive folder to search for season subfolders. Defaults to the hard-coded ROW shared drive. Only used when `--sheet-id` is not provided.
+- `--roster-name-substring`: substring used to identify the roster sheet inside a meet folder. Default `"Officials Roster"`.
 - `--rems-club`: only process rows whose `Official Club` column matches this value (case-insensitive). You can only add deck evaluations for officials registered under your own club in REMS, so the tool skips other-club rows by default. Defaults to `ROW`.
 - `--interactive`: prompt `y/n/q` before POSTing each row. Default if you just press Enter is `n` (skip). `q` aborts the rest of the batch.
 - `--recheck`: **verify-only** pass for new evals. Also includes rows already marked `Deck Eval Recorded? = TRUE`, confirms each one against REMS, and reports any missing from REMS as `MISSING`. Rows where REMS holds the eval but with the day and month accidentally swapped (a legacy bug from an earlier build of this tool) are flagged `SWAPPED`. To re-record the missing ones, un-tick `Deck Eval Recorded?` for those rows in the sheet and re-run without `--recheck`. With `--recheck --interactive`, each `SWAPPED` row offers a `y/N` prompt to fix the date directly in REMS via the credential edit endpoint.
