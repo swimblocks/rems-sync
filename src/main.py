@@ -14,31 +14,28 @@ from .utils import (
     deck_eval_credential_label,
     count_existing_deck_evals,
     to_mmddyyyy,
+    parse_rems_date_to_iso,
 )
 
 
 class AlreadyRecordedError(click.ClickException):
-    """Raised when this exact deck evaluation (same meet + session) already exists in REMS."""
-
-
-_CREDENTIAL_ID_RE = re.compile(r'view-from-member-profile/\d+/\d+/(\d+)')
-
-
-def _credential_ids_from_actions(actions_str):
-    """Extract credential IDs from the actions URL string returned by get_member_credentials."""
-    return _CREDENTIAL_ID_RE.findall(actions_str or '')
+    """Raised when an existing credential for this position covers one of the meet's session dates."""
 
 
 def _resolve_deck_eval_credential(client, member_season_id, member_id, position,
-                                   meet=None, description=None):
+                                   meet_session_dates=None):
     """
     Determine which credential to add next for the given position.
     Returns (credential_id, type_id, eval_number, label).
 
-    If meet+description are provided and an existing matching credential records
-    the same meet+session, raises AlreadyRecordedError (treat as idempotent success).
-    Other mismatches (no slots on form, or at-max with different meet/session)
-    raise click.ClickException.
+    A position can only be evaluated once per meet. If meet_session_dates is provided
+    (a set/iterable of YYYY-MM-DD strings covering the meet's sessions) and an
+    existing credential of the right position prefix has start_date in that set,
+    treat as already recorded (idempotent). This matching ignores provider_identifier
+    and description so manually-entered evals with different meet names still dedup.
+
+    Other mismatches (no slots on the form, at-max with a non-matching date) raise
+    click.ClickException.
     """
     existing = client.get_member_credentials(
         rems_id=None, member_id=member_id, member_season_id=member_season_id
@@ -51,35 +48,32 @@ def _resolve_deck_eval_credential(client, member_season_id, member_id, position,
     options = client.get_add_credential_form_options(member_season_id, member_id)
     matching_options = [o for o in options if o['label'].strip().lower().startswith(normalized_prefix + ' #')]
 
-    # If this exact eval has already been recorded (same meet + session), idempotent success.
-    if meet is not None and description is not None:
-        matching_existing = [
-            c for c in existing
-            if (c.get('type') or '').strip().lower() == 'deck evaluation'
-            and (c.get('name') or '').strip().lower().startswith(normalized_prefix + ' ')
-        ]
+    matching_existing = [
+        c for c in existing
+        if (c.get('type') or '').strip().lower() == 'deck evaluation'
+        and (c.get('name') or '').strip().lower().startswith(normalized_prefix + ' ')
+    ]
+
+    if meet_session_dates:
+        date_set = {d for d in meet_session_dates if d}
         for cred in matching_existing:
-            for cred_id in _credential_ids_from_actions(cred.get('actions', '')):
-                details = client.get_member_credential_details(member_season_id, member_id, cred_id)
-                if ((details.get('provider_identifier') or '').strip().lower() == meet.strip().lower()
-                        and (details.get('description') or '').strip().lower() == description.strip().lower()):
-                    raise AlreadyRecordedError(
-                        f"already recorded (existing {details.get('name')!r} at meet "
-                        f"{details.get('provider_identifier')!r}, {details.get('description')!r})"
-                    )
+            iso = parse_rems_date_to_iso(cred.get('start_date'))
+            if iso and iso in date_set:
+                raise AlreadyRecordedError(
+                    f"already recorded (existing {cred.get('name')!r} on {cred.get('start_date')})"
+                )
 
     for opt in options:
         if opt['label'].strip().lower() == expected_label.lower():
             return opt['credential_id'], opt['type_id'], eval_number, expected_label
 
     if matching_options and existing_count >= len(matching_options):
-        # At max but didn't find a meet/session match above. Surface the existing evals.
-        existing_summary = ", ".join(c.get('name', '') for c in existing
-                                     if (c.get('name') or '').lower().startswith(normalized_prefix + ' '))
+        existing_summary = ", ".join(f"{c.get('name', '')} ({c.get('start_date', '?')})"
+                                     for c in matching_existing)
         raise click.ClickException(
             f"Max {len(matching_options)} {normalized_prefix.title()} evaluations already "
-            f"exist for this official ({existing_summary}) but none match meet={meet!r} "
-            f"session={description!r}. Resolve in REMS before re-running."
+            f"exist for this official ({existing_summary}) but none match this meet's session "
+            f"dates. Resolve in REMS before re-running."
         )
 
     available = ", ".join(o['label'] for o in options)
@@ -396,7 +390,7 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
             try:
                 credential_id, type_id, eval_number, label = _resolve_deck_eval_credential(
                     client, member_season_id, member_id, position,
-                    meet=meet_name, description=description,
+                    meet_session_dates=set(session_dates.values()),
                 )
             except AlreadyRecordedError as e:
                 click.echo(f"  OK row {idx} ({name} / {position}): {e.message}")
@@ -494,10 +488,11 @@ def add_deck_eval(username, password, season, official_name, rems_id, position, 
     if not member_id:
         raise click.ClickException(f"Could not resolve member_id for {official_name!r}.")
 
+    iso_date = parse_rems_date_to_iso(eval_date)
     try:
         credential_id, type_id, eval_number, label = _resolve_deck_eval_credential(
             client, member_season_id, member_id, position,
-            meet=meet, description=description,
+            meet_session_dates={iso_date} if iso_date else None,
         )
     except AlreadyRecordedError as e:
         click.echo(f"Deck evaluation for {official_name} / {position} {e.message}.")

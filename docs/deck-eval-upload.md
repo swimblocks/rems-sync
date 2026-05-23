@@ -82,7 +82,9 @@ The Positions tab uses friendly names that don't always match REMS credential na
 
 ## Duplicate detection
 
-`AlreadyRecordedError` is raised iff there exists an existing credential of the correct prefix whose `provider_identifier` matches the meet AND whose `description` matches the session. This check runs regardless of eval count — even with a single existing #1, we verify before adding #2. Existing credentials at the form's max (#1 + #2) with a different meet/session do NOT match this condition; they raise a distinct `ClickException` asking the user to resolve manually in REMS (the form allows no #3).
+A position can only be evaluated once per meet, so dedup matches on **position prefix + start_date**. `AlreadyRecordedError` is raised iff there exists an existing credential of the correct position prefix whose `start_date` (REMS displays as d/m/Y) falls within the set of the meet's session dates (parsed from the Grid tab, in YYYY-MM-DD). This matching ignores `provider_identifier` and `description` so that manually-entered evals with different meet-name strings still dedup correctly.
+
+The check runs regardless of eval count — even with a single existing #1 on a meet date, we treat the new attempt as a duplicate. Existing credentials at the form's max (#1 + #2) with dates outside the meet do NOT match; they raise a distinct `ClickException` asking the user to resolve manually in REMS (the form allows no #3).
 
 ## Open questions
 

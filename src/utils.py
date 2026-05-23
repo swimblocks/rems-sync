@@ -101,3 +101,25 @@ def to_mmddyyyy(value):
     if re.match(r'^\d{4}-\d{2}-\d{2}$', s):
         return datetime.strptime(s, "%Y-%m-%d").strftime("%m/%d/%Y")
     raise ValueError(f"Unsupported date format: {value!r} (use YYYY-MM-DD or MM/DD/YYYY)")
+
+
+def parse_rems_date_to_iso(value):
+    """
+    Parse a date value from REMS (typically rendered by flatpickr as d/m/Y, e.g.
+    '12/04/2026' meaning 12 April 2026) into ISO format YYYY-MM-DD.
+
+    Returns None for empty/unparseable inputs rather than raising — the caller
+    may want to skip those rather than fail the whole batch.
+    """
+    if isinstance(value, (date, datetime)):
+        return value.strftime("%Y-%m-%d")
+    s = (str(value) if value is not None else '').strip()
+    if not s:
+        return None
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', s):
+        return s
+    m = re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})$', s)
+    if m:
+        d, mo, y = m.groups()
+        return f"{int(y):04d}-{int(mo):02d}-{int(d):02d}"
+    return None
