@@ -100,6 +100,123 @@ def test_update_cell_unknown_column_raises():
         update_cell('fake-id', 'positions', 0, 'Missing', True, client)
 
 
+def test_ensure_columns_after_inserts_missing_with_format():
+    """Missing columns get inserted after the anchor; CHECKBOX / TEXT format
+    requests go to spreadsheet.batch_update."""
+    from src.gsheet import ensure_columns_after
+    mock_worksheet = MagicMock()
+    mock_worksheet.id = 1234
+    initial = ['Session', 'Position Name', 'Official Club', 'Deck Eval Success?', 'Notes']
+    after_provider = ['Session', 'Position Name', 'Official Club', 'Deck Eval Success?',
+                      'Deck Eval Provider', 'Notes']
+    mock_worksheet.row_values.side_effect = [
+        initial,         # anchor check
+        initial,         # Provider iter (pre-insert)
+        after_provider,  # Recorded? iter (post Provider insert)
+    ]
+    mock_spreadsheet = MagicMock()
+    mock_worksheet.spreadsheet = mock_spreadsheet
+    mock_client = MagicMock()
+    mock_client.open_by_key.return_value = mock_spreadsheet
+    mock_spreadsheet.worksheet.return_value = mock_worksheet
+
+    added = ensure_columns_after(
+        mock_client, 'fake-id', 'Positions',
+        anchor='Deck Eval Success?',
+        columns=[
+            {'name': 'Deck Eval Provider', 'format': 'TEXT'},
+            {'name': 'Deck Eval Recorded?', 'format': 'CHECKBOX'},
+        ],
+    )
+    assert added is True
+    # Provider inserted at col 5 (right after Deck Eval Success? at col 4).
+    mock_worksheet.insert_cols.assert_any_call([['Deck Eval Provider']], col=5)
+    # Recorded? inserted at col 6 (right after the newly-added Provider).
+    mock_worksheet.insert_cols.assert_any_call([['Deck Eval Recorded?']], col=6)
+    # Two batch_update calls: one for the TEXT-format column, one for the CHECKBOX column.
+    assert mock_spreadsheet.batch_update.call_count == 2
+
+
+def test_ensure_columns_after_provider_before_existing_recorded():
+    """Bug fix: when Recorded? is already present in the sheet, Provider gets
+    inserted between Success? and Recorded?, not after Recorded?."""
+    from src.gsheet import ensure_columns_after
+    mock_worksheet = MagicMock()
+    mock_worksheet.id = 1234
+    initial = ['Session', 'Position Name', 'Deck Eval Success?', 'Deck Eval Recorded?', 'Notes']
+    after_provider = ['Session', 'Position Name', 'Deck Eval Success?',
+                      'Deck Eval Provider', 'Deck Eval Recorded?', 'Notes']
+    mock_worksheet.row_values.side_effect = [
+        initial,         # anchor check
+        initial,         # Provider iter (pre-insert)
+        after_provider,  # Recorded? iter (already present, skipped)
+    ]
+    mock_spreadsheet = MagicMock()
+    mock_worksheet.spreadsheet = mock_spreadsheet
+    mock_client = MagicMock()
+    mock_client.open_by_key.return_value = mock_spreadsheet
+    mock_spreadsheet.worksheet.return_value = mock_worksheet
+
+    added = ensure_columns_after(
+        mock_client, 'fake-id', 'Positions',
+        anchor='Deck Eval Success?',
+        columns=[
+            {'name': 'Deck Eval Provider', 'format': 'TEXT'},
+            {'name': 'Deck Eval Recorded?', 'format': 'CHECKBOX'},
+        ],
+    )
+    assert added is True
+    # Only Provider is inserted (Recorded? already exists). Inserted at col 4 —
+    # right after Deck Eval Success? at col 3 — pushing existing Recorded? to col 5.
+    mock_worksheet.insert_cols.assert_called_once_with([['Deck Eval Provider']], col=4)
+
+
+def test_apply_text_format_clears_data_validation():
+    """Inserted Provider columns sometimes inherit a BOOLEAN data validation rule
+    from a neighbouring checkbox column. The TEXT format setter must clear that
+    or cells render as checkboxes and read back as 'TRUE'/'FALSE'."""
+    from src.gsheet import _apply_text_format
+    mock_worksheet = MagicMock()
+    mock_worksheet.id = 1234
+    mock_spreadsheet = MagicMock()
+    mock_worksheet.spreadsheet = mock_spreadsheet
+    _apply_text_format(mock_worksheet, 4)
+    requests = mock_spreadsheet.batch_update.call_args.args[0]["requests"]
+    assert len(requests) == 3
+    assert "setDataValidation" in requests[0]
+    # The setDataValidation request must have no 'rule' key (which means clear).
+    assert "rule" not in requests[0]["setDataValidation"]
+    # Inherited cell values (e.g. FALSE strings from a checkbox neighbour) must be wiped.
+    assert "updateCells" in requests[1]
+    assert requests[1]["updateCells"]["fields"] == "userEnteredValue"
+    assert "repeatCell" in requests[2]
+
+
+def test_ensure_columns_after_noop_when_present():
+    """When the columns are already present, no inserts happen."""
+    from src.gsheet import ensure_columns_after
+    mock_worksheet = MagicMock()
+    mock_worksheet.row_values.return_value = [
+        'Session', 'Position Name', 'Official Club', 'Deck Eval Success?',
+        'Deck Eval Provider', 'Deck Eval Recorded?', 'Notes',
+    ]
+    mock_client = MagicMock()
+    mock_spreadsheet = MagicMock()
+    mock_client.open_by_key.return_value = mock_spreadsheet
+    mock_spreadsheet.worksheet.return_value = mock_worksheet
+
+    added = ensure_columns_after(
+        mock_client, 'fake-id', 'Positions',
+        anchor='Deck Eval Success?',
+        columns=[
+            {'name': 'Deck Eval Provider', 'format': 'TEXT'},
+            {'name': 'Deck Eval Recorded?', 'format': 'CHECKBOX'},
+        ],
+    )
+    assert added is False
+    mock_worksheet.insert_cols.assert_not_called()
+
+
 def test_read_sheet_tab_missing_worksheet_raises_clickexception():
     """Missing tab should raise a ClickException with a clear message, not gspread's WorksheetNotFound."""
     import gspread.exceptions
