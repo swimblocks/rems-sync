@@ -1,7 +1,15 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
 .venv/
+venv/
+.pytest_cache/
+
+# Local secrets / agent state
+.env
+.claude/
+*.log
 
 # Terraform
 .terraform/
