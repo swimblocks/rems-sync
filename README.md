@@ -221,7 +221,7 @@ python -m src.main add-deck-eval \
 - `--rems-id` (optional but recommended): look up by REMS ID instead of name search. Avoids the "Janpreet" / single-name ambiguity.
 - `--dry-run`: do every read (login, member lookup, existing credentials, form options) but skip the POST.
 
-If the same meet + session is already recorded, the tool reports "already recorded" and exits 0 (idempotent). If the official is at the form's maximum (#1 and #2 both exist) but for different meets/sessions, the tool refuses with a clear message instructing you to resolve it in REMS.
+A position can only be evaluated once per meet, so the tool considers any existing deck eval for the same position whose `start_date` falls on one of the meet's session dates to be the same record. If found, it reports "already recorded" and exits 0 (idempotent). If the official is at the form's maximum (#1 and #2 both exist) but on dates outside the meet, the tool refuses with a clear message instructing you to resolve it in REMS.
 
 #### `upload-deck-evals` — batch from a Google Sheet
 

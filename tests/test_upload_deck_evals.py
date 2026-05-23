@@ -221,24 +221,16 @@ def test_upload_deck_evals_already_recorded_ticks_cell(mock_mfa, mock_client_cla
         'rems_id': 'SC24176410', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
-    # The pending row is Chris Fletcher / Inspector of Turns at Cunningham Classic 2026, Session 6.
-    # Pretend he already has #2 recorded for that exact meet+session.
+    # The pending row is Chris Fletcher / Inspector of Turns at Cunningham Classic 2026 (Apr 12).
+    # Pretend he already has #2 recorded on Apr 12 (matches a session date of the meet).
     mock_client.get_member_credentials.return_value = [
-        {'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #1',
-         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/442'},
-        {'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #2',
-         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/443'},
+        {'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #1', 'start_date': '15/03/2024'},
+        {'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #2', 'start_date': '12/04/2026'},
     ]
     mock_client.get_add_credential_form_options.return_value = [
         {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
         {'label': 'Inspector of Turns Evaluation #2', 'credential_id': '443', 'type_id': '127'},
     ]
-    mock_client.get_member_credential_details.side_effect = lambda msid, mid, cid: {
-        '442': {'name': 'Inspector of Turns Evaluation #1',
-                'provider_identifier': 'Old Meet 2024', 'description': 'Session 2'},
-        '443': {'name': 'Inspector of Turns Evaluation #2',
-                'provider_identifier': 'Cunningham Classic 2026', 'description': 'Session 6'},
-    }[str(cid)]
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
@@ -411,21 +403,16 @@ def test_upload_deck_evals_recheck_verify_only(mock_mfa, mock_client_class, mock
         'rems_id': 'SC11112222', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
-    # REMS only has the Starter eval (for 'C D'); not the Inspector of Turns.
+    # REMS only has the Starter eval (for 'C D') on Apr 12 (matches Session 6 in the grid fixture).
     mock_client.get_member_credentials.side_effect = lambda **kwargs: {
         '178722': [
-            {'type': 'Deck Evaluation', 'name': 'Starter Evaluation #1',
-             'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/456'},
+            {'type': 'Deck Evaluation', 'name': 'Starter Evaluation #1', 'start_date': '12/04/2026'},
         ],
     }.get(str(kwargs['member_id']), [])
     mock_client.get_add_credential_form_options.return_value = [
         {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
         {'label': 'Starter Evaluation #1', 'credential_id': '456', 'type_id': '127'},
     ]
-    mock_client.get_member_credential_details.side_effect = lambda msid, mid, cid: {
-        '456': {'name': 'Starter Evaluation #1',
-                'provider_identifier': 'Cunningham Classic 2026', 'description': 'Session 6'},
-    }[str(cid)]
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
