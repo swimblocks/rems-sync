@@ -549,6 +549,65 @@ def test_get_member_credential_details(rems_client):
 
 
 @responses.activate
+def test_update_member_credential_overrides_start_date(rems_client):
+    """The edit POST should carry forward every form field, applying our overrides."""
+    member_season_id = 685100
+    member_id = 178722
+    credential_id = 452
+    edit_url = (f"{rems_client.BASE_URL}/sportlomo/user/credentials/"
+                f"view-from-member-profile/{member_season_id}/{member_id}/{credential_id}")
+    html = """
+    <form>
+      <input type="hidden" name="_method" value="PUT" />
+      <input type="hidden" name="_csrf" value="abc123" />
+      <input name="name" value="Chief Timekeeper Evaluation #2" />
+      <select name="state"><option value="80" selected>Active</option></select>
+      <input name="start_date" value="04/11/2025" />
+      <input name="expiry_date" value="" />
+      <input name="provider" value="Kaoru Yajima" />
+    </form>
+    """
+    responses.add(responses.GET, edit_url, body=html, status=200)
+
+    captured = {}
+    def edit_callback(req):
+        # Parse form-encoded payload.
+        from urllib.parse import parse_qsl
+        body = req.body if isinstance(req.body, str) else (req.body.decode() if req.body else "")
+        for k, v in parse_qsl(body, keep_blank_values=True):
+            captured.setdefault(k, []).append(v)
+        return (302, {"Location": "/something"}, "")
+    responses.add_callback(responses.POST, edit_url, callback=edit_callback)
+
+    rems_client.update_member_credential(
+        member_season_id, member_id, credential_id,
+        field_overrides={"start_date": "11/04/2025"},
+    )
+    # Start date was overridden; the rest of the form survived intact.
+    assert captured["start_date"] == ["11/04/2025"]
+    assert captured["_csrf"] == ["abc123"]
+    assert captured["provider"] == ["Kaoru Yajima"]
+    assert captured["state"] == ["80"]
+
+
+@responses.activate
+def test_update_member_credential_raises_on_non_302(rems_client):
+    member_season_id = 685100
+    member_id = 178722
+    credential_id = 452
+    edit_url = (f"{rems_client.BASE_URL}/sportlomo/user/credentials/"
+                f"view-from-member-profile/{member_season_id}/{member_id}/{credential_id}")
+    responses.add(responses.GET, edit_url,
+                  body="<form><input name='start_date' value='04/11/2025'/></form>",
+                  status=200)
+    responses.add(responses.POST, edit_url, status=200)  # validation error → not a 302
+    with pytest.raises(Exception, match="expected 302"):
+        rems_client.update_member_credential(
+            member_season_id, member_id, credential_id, {"start_date": "11/04/2025"},
+        )
+
+
+@responses.activate
 def test_get_add_credential_form_options_via_ajax(rems_client):
     member_season_id = 685100
     member_id = 178722
