@@ -1124,7 +1124,14 @@ def test_upload_deck_evals_recheck_interactive_skip_missing(
 @patch('src.main.read_sheet_rows')
 @patch('src.main.read_sheet_tab')
 @patch('src.main.get_gspread_client')
-def test_upload_deck_evals_no_pending(mock_get_gs, mock_read_tab, mock_read_rows, runner):
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_no_pending(
+        mock_mfa, mock_client_class, mock_get_gs,
+        mock_read_tab, mock_read_rows, runner):
+    """Sanity: a roster with no pending rows exits cleanly. REMSClient is
+    mocked so the test doesn't depend on a real (cached) REMS login."""
+    mock_client_class.return_value = MagicMock()
     positions = pd.DataFrame([
         {'Official Name': 'A B', 'Official Position': 'Starter', 'Official Club': 'ROW',
          'Deck Eval Success?': 'FALSE', 'Deck Eval Provider': '',
