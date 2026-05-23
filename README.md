@@ -215,13 +215,15 @@ python -m src.main add-deck-eval \
   --meet "Cunningham Classic 2026" \
   --date 2026-04-12 \
   --description "Session 6" \
+  [--meet-dates 2026-04-10,2026-04-11,2026-04-12] \
   [--dry-run]
 ```
 
 - `--rems-id` (optional but recommended): look up by REMS ID instead of name search. Avoids the "Janpreet" / single-name ambiguity.
+- `--meet-dates` (optional): comma-separated list of all the meet's session dates. When provided, the duplicate check rejects an add if any existing eval for the position falls on any of these dates — enforcing "no two evals for the same position at the same meet" even if a previous eval was on a different session. **When omitted, the tool defaults to the Wed..Sun bracket around `--date`** (most recent Wed on/before, through next Sun on/after). Pass `--meet-dates` explicitly for meets that span outside this default.
 - `--dry-run`: do every read (login, member lookup, existing credentials, form options) but skip the POST.
 
-A position can only be evaluated once per meet, so the tool considers any existing deck eval for the same position whose `start_date` falls on one of the meet's session dates to be the same record. If found, it reports "already recorded" and exits 0 (idempotent). If the official is at the form's maximum (#1 and #2 both exist) but on dates outside the meet, the tool refuses with a clear message instructing you to resolve it in REMS.
+Duplicate detection uses the same logic for both commands: any existing deck eval for the same position whose `start_date` falls within the date set is treated as the same record. `upload-deck-evals` always passes the full meet's session date set from the Grid tab (the rule is fully enforced). `add-deck-eval` defaults to the Wed..Sun bracket around `--date`, or to `--meet-dates` if provided. If found, "already recorded" is reported and the command exits 0 (idempotent). If the official is at the form's maximum (#1 and #2 both exist) on dates outside the set, the command refuses with a clear message instructing you to resolve it in REMS.
 
 #### `upload-deck-evals` — batch from a Google Sheet
 

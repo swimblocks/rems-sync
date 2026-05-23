@@ -397,6 +397,83 @@ def test_add_deck_eval_one_existing_different_date_proceeds(mock_mfa, mock_clien
 
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
+def test_add_deck_eval_default_bracket_catches_adjacent_meet_day(mock_mfa, mock_client_class, runner):
+    """Without --meet-dates, the default Wed-Sun bracket catches a duplicate on another meet day."""
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.search_member_by_name.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    # Existing eval on Sat Apr 11 (mid-meet). User adds for Sun Apr 12 — same meet.
+    mock_client.get_member_credentials.return_value = [
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1', 'start_date': '11/04/2026'},
+    ]
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Chief Timekeeper Evaluation #1', 'credential_id': '451', 'type_id': '127'},
+        {'label': 'Chief Timekeeper Evaluation #2', 'credential_id': '452', 'type_id': '127'},
+    ]
+
+    result = runner.invoke(cli, [
+        'add-deck-eval',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--official-name', 'Chris Fletcher',
+        '--position', 'Chief Timer',
+        '--provider', 'Kaoru Yajima',
+        '--meet', 'Cunningham Classic 2026',
+        '--date', '2026-04-12',  # Sun
+        '--description', 'Session 6',
+        # No --meet-dates: should default to Wed Apr 8 .. Sun Apr 12.
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert 'already recorded' in result.output.lower()
+    mock_client.add_member_credential.assert_not_called()
+
+
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_add_deck_eval_meet_dates_flag_catches_other_session(mock_mfa, mock_client_class, runner):
+    """--meet-dates lets add-deck-eval detect a duplicate on a different session of the same meet."""
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.search_member_by_name.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    # Existing eval on Apr 11 — different session of the same meet (Apr 10-12).
+    mock_client.get_member_credentials.return_value = [
+        {'type': 'Deck Evaluation', 'name': 'Chief Timekeeper Evaluation #1', 'start_date': '11/04/2026'},
+    ]
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Chief Timekeeper Evaluation #1', 'credential_id': '451', 'type_id': '127'},
+        {'label': 'Chief Timekeeper Evaluation #2', 'credential_id': '452', 'type_id': '127'},
+    ]
+
+    # User is trying to add on Apr 12, but provides --meet-dates covering the whole meet.
+    result = runner.invoke(cli, [
+        'add-deck-eval',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--official-name', 'Chris Fletcher',
+        '--position', 'Chief Timer',
+        '--provider', 'Kaoru Yajima',
+        '--meet', 'Cunningham Classic 2026',
+        '--date', '2026-04-12',
+        '--description', 'Session 6',
+        '--meet-dates', '2026-04-10,2026-04-11,2026-04-12',
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert 'already recorded' in result.output.lower()
+    mock_client.add_member_credential.assert_not_called()
+
+
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
 def test_add_deck_eval_at_max_but_different_dates(mock_mfa, mock_client_class, runner):
     mock_client = MagicMock()
     mock_client_class.return_value = mock_client

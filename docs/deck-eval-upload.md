@@ -82,9 +82,15 @@ The Positions tab uses friendly names that don't always match REMS credential na
 
 ## Duplicate detection
 
-A position can only be evaluated once per meet, so dedup matches on **position prefix + start_date**. `AlreadyRecordedError` is raised iff there exists an existing credential of the correct position prefix whose `start_date` (REMS displays as d/m/Y) falls within the set of the meet's session dates (parsed from the Grid tab, in YYYY-MM-DD). This matching ignores `provider_identifier` and `description` so that manually-entered evals with different meet-name strings still dedup correctly.
+A position can only be evaluated once per meet, so dedup matches on **position prefix + start_date**. The single source of truth is `find_existing_deck_eval_in_dates(credentials, position, dates)` in [src/utils.py](../src/utils.py): it returns the first existing "Deck Evaluation" credential of the right prefix whose `start_date` (parsed from REMS's d/m/Y display format) is in the given ISO date set, or `None`.
 
-The check runs regardless of eval count — even with a single existing #1 on a meet date, we treat the new attempt as a duplicate. Existing credentials at the form's max (#1 + #2) with dates outside the meet do NOT match; they raise a distinct `ClickException` asking the user to resolve manually in REMS (the form allows no #3).
+`_resolve_deck_eval_credential` calls this helper unconditionally — independent of `--recheck`, `--interactive`, or eval count. If it returns a credential, `AlreadyRecordedError` fires (idempotent success). If it returns None and the official is at the form's max (#1 + #2) for the position with no date matches, a distinct `ClickException` asks the user to resolve manually in REMS (the form allows no #3).
+
+Both commands feed the helper the same way but with different date sets:
+- `upload-deck-evals` passes `set(session_dates.values())` — all of the meet's sessions per the Grid tab. The "no two evals same position same meet" rule is fully enforced.
+- `add-deck-eval` defaults to `default_meet_dates_for(--date)`, which is the most recent Wednesday on/before `--date` through the next Sunday on/after `--date`. For meets that fall outside this bracket, pass `--meet-dates 2026-04-10,2026-04-11,2026-04-12` to override.
+
+`provider_identifier` and `description` are ignored on purpose — manually-entered REMS evaluations may have arbitrary meet-name strings, but the dates are reliable.
 
 ## Open questions
 
