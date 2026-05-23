@@ -54,6 +54,30 @@ def test_normalize_position_for_credential():
     assert normalize_position_for_credential("Inspector of Turns") == "Inspector of Turns"
     assert normalize_position_for_credential("  Admin Desk  ") == "Administration Desk"
 
+def test_find_existing_deck_eval_with_swapped_date():
+    """Legacy m/d/Y bug: we sent '04/11/2025' to mean April 11 but REMS stored
+    it as 4 November ('04/11/2025' parsed as d/m/Y = 2025-11-04). The swap
+    of 2025-11-04 (back to 2025-04-11) hits the meet date set."""
+    from src.utils import find_existing_deck_eval_with_swapped_date
+    credentials = [
+        # On the meet date already — not a swap bug.
+        {'type': 'Deck Evaluation', 'name': 'Starter Evaluation #1', 'start_date': '11/04/2025'},
+        # 4 November 2025: the swap of April 11 — exactly the bug case.
+        {'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #1', 'start_date': '04/11/2025'},
+        # Wholly unrelated date.
+        {'type': 'Deck Evaluation', 'name': 'Meet Manager Evaluation #1', 'start_date': '20/05/2024'},
+    ]
+    meet_dates = {'2025-04-11'}
+    found = find_existing_deck_eval_with_swapped_date(credentials, 'Inspector of Turns', meet_dates)
+    assert found is not None and found['start_date'] == '04/11/2025'
+    # Starter eval matches the meet date directly, not a swap — excluded.
+    assert find_existing_deck_eval_with_swapped_date(credentials, 'Starter', meet_dates) is None
+    # Meet Manager: 20/05/2024 -> ISO 2024-05-20, swap = 2024-20-05 (invalid month) -> no match.
+    assert find_existing_deck_eval_with_swapped_date(credentials, 'Meet Manager', meet_dates) is None
+    # Empty meet_dates -> no detection
+    assert find_existing_deck_eval_with_swapped_date(credentials, 'Inspector of Turns', None) is None
+
+
 def test_find_existing_deck_eval_in_dates():
     from src.utils import find_existing_deck_eval_in_dates
     credentials = [

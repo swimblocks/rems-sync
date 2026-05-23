@@ -88,6 +88,47 @@ def find_existing_deck_eval_in_dates(credentials, position, dates):
     return None
 
 
+def _swap_day_month_iso(iso_date):
+    """Return the YYYY-MM-DD date with day and month swapped, or None if the
+    swap would be invalid (e.g. day > 12 means the swap is unambiguous and
+    can't be a legacy bug)."""
+    try:
+        year, month, day = iso_date.split('-')
+        year, month, day = int(year), int(month), int(day)
+        if month > 12 or day > 12:
+            return None
+        return date(year, day, month).isoformat()
+    except (ValueError, AttributeError):
+        return None
+
+
+def find_existing_deck_eval_with_swapped_date(credentials, position, dates):
+    """Return the first existing 'Deck Evaluation' credential for `position`
+    whose start_date is the day/month swap of one of `dates` — the legacy
+    m/d/Y vs d/m/Y bug from before the date-format fix. Returns None if no
+    such credential exists.
+
+    Excludes credentials that already match a real meet date (those aren't bug
+    artifacts, they're current records).
+    """
+    if not dates:
+        return None
+    real_dates = {d for d in dates if d}
+    prefix = normalize_position_for_credential(position).lower()
+    for cred in credentials:
+        cred_type = (cred.get('type') or '').strip().lower()
+        cred_name = (cred.get('name') or '').strip().lower()
+        if cred_type != 'deck evaluation' or not cred_name.startswith(prefix + ' '):
+            continue
+        iso = parse_rems_date_to_iso(cred.get('start_date'))
+        if not iso or iso in real_dates:
+            continue
+        swapped = _swap_day_month_iso(iso)
+        if swapped and swapped in real_dates:
+            return cred
+    return None
+
+
 def count_existing_deck_evals(credentials, position):
     """
     Count how many existing 'Deck Evaluation' credentials this member has for the given position.
