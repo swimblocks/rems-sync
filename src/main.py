@@ -17,11 +17,13 @@ ROW_OFFICIALS_ROOT_FOLDER_ID = "0AFczXKtVbxcaUk9PVA"
 DEFAULT_ROSTER_SHEET_NAME_SUBSTRING = "Officials Roster"
 
 
-def _discover_meet_sheet_id(season, root_folder_id, roster_substring):
-    """Find the sheet for a meet via the Drive folder hierarchy:
-    `root_folder_id/<season>/<meet>/<...Officials Roster sheet>`. Prompts the
-    user to pick a meet when multiple are found. Returns the picked sheet id,
-    or raises ClickException."""
+def _discover_meet_sheets(season, root_folder_id, roster_substring, interactive):
+    """Find roster sheets via the Drive folder hierarchy:
+    `root_folder_id/<season>/<meet>/<...Officials Roster sheet>`.
+
+    Returns a list of `{'id', 'name', 'meet_name'}` dicts. When `interactive`
+    is true and >1 meet is found, prompts the user to pick one or 'a' for all.
+    When `interactive` is false, returns every discovered meet (process all)."""
     drive = get_drive_session()
 
     # Shared-drive IDs start with "0A" (e.g. 0AFczXKtVbxcaUk9PVA). When the
@@ -66,22 +68,39 @@ def _discover_meet_sheet_id(season, root_folder_id, roster_substring):
         )
 
     meets_with_roster.sort(key=lambda ms: (ms[0].get('name') or '').casefold())
+
+    def _entry(meet, sheet):
+        return {'id': sheet['id'], 'name': sheet.get('name'), 'meet_name': meet.get('name')}
+
+    # Non-interactive: process all discovered meets.
+    if not interactive:
+        click.echo(f"Found {len(meets_with_roster)} meet(s) in {season_folder.get('name')}; "
+                   f"processing all (use --interactive to pick one).")
+        return [_entry(m, s) for (m, s) in meets_with_roster]
+
+    # Interactive: show a numbered list with 'a' (all) and 'q' (quit) options.
     click.echo(f"Meets found in {season_folder.get('name')}:")
     for i, (meet, sheet) in enumerate(meets_with_roster, 1):
         click.echo(f"  {i:>2}. {meet.get('name')}   ({sheet.get('name')})")
+    click.echo("   a. Process all of them")
+    click.echo("   q. Quit")
     choice = click.prompt(
-        f"Pick a meet [1-{len(meets_with_roster)}]",
+        f"Pick a meet [1-{len(meets_with_roster)} / a / q]",
         default="1", show_default=True,
-    ).strip()
+    ).strip().lower()
+    if choice in ('q', 'quit'):
+        raise click.ClickException("Aborted by user.")
+    if choice in ('a', 'all'):
+        return [_entry(m, s) for (m, s) in meets_with_roster]
     try:
         idx = int(choice) - 1
     except ValueError:
-        raise click.ClickException(f"Not a number: {choice!r}")
+        raise click.ClickException(f"Not a number / a / q: {choice!r}")
     if not (0 <= idx < len(meets_with_roster)):
         raise click.ClickException(f"Out of range: {choice!r}")
     chosen_meet, chosen_sheet = meets_with_roster[idx]
     click.echo(f"Using meet {chosen_meet.get('name')!r} sheet {chosen_sheet.get('name')!r} ({chosen_sheet['id']})")
-    return chosen_sheet['id']
+    return [_entry(chosen_meet, chosen_sheet)]
 from .utils import (
     parse_season_to_id,
     validate_rems_id,
@@ -531,12 +550,50 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
                      officials_tab, session_col, rems_club, meet_name, dry_run, interactive, recheck):
     """Upload deck evaluations from a positions sheet to REMS and mark each row recorded."""
     season_id = parse_season_to_id(season)
-    if not sheet_id:
-        sheet_id = _discover_meet_sheet_id(season, season_folder_id, roster_name_substring)
     gsheet_client = get_gspread_client()
 
+    if sheet_id:
+        sheets_to_process = [{'id': sheet_id, 'name': None, 'meet_name': None}]
+    else:
+        sheets_to_process = _discover_meet_sheets(
+            season, season_folder_id, roster_name_substring, interactive=interactive,
+        )
+
+    # One login covers every sheet.
+    client = REMSClient(username, password, get_mfa_code)
+    client.login()
+
+    overall_successes = 0
+    overall_failures = 0
+    for sheet_entry in sheets_to_process:
+        sheet_id = sheet_entry['id']
+        if sheet_entry.get('meet_name'):
+            click.echo(f"\n=== {sheet_entry['meet_name']} ({sheet_entry.get('name')}) ===")
+
+        successes, failures = _process_meet_sheet(
+            client, gsheet_client, sheet_id,
+            season=season, season_id=season_id,
+            positions_tab=positions_tab, grid_tab=grid_tab, meet_tab=meet_tab,
+            officials_tab=officials_tab, session_col=session_col,
+            rems_club=rems_club, meet_name_override=meet_name,
+            dry_run=dry_run, interactive=interactive, recheck=recheck,
+        )
+        overall_successes += successes
+        overall_failures += failures
+
+    if len(sheets_to_process) > 1:
+        click.echo(f"\nAll meets done: {overall_successes} succeeded, {overall_failures} failed.")
+
+
+def _process_meet_sheet(client, gsheet_client, sheet_id, *,
+                         season, season_id,
+                         positions_tab, grid_tab, meet_tab, officials_tab,
+                         session_col, rems_club, meet_name_override,
+                         dry_run, interactive, recheck):
+    """Process a single meet's roster sheet. Returns (successes, failures)."""
     positions_df = read_sheet_tab(sheet_id, positions_tab, gsheet_client)
     meet_meta = parse_meet_tab(read_sheet_rows(sheet_id, meet_tab, gsheet_client))
+    meet_name = meet_name_override
     if meet_name is None:
         meet_name = meet_meta.get('Meet Name') or meet_meta.get('Name')
         if not meet_name:
@@ -617,10 +674,7 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
                + (f" ({excluded_other_club} other-club row(s) skipped)" if excluded_other_club else "")
                + ".")
     if pending.empty:
-        return
-
-    client = REMSClient(username, password, get_mfa_code)
-    client.login()
+        return 0, 0
 
     successes = 0
     failures = 0
@@ -774,6 +828,7 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
             failures += 1
 
     click.echo(f"Done: {successes} succeeded, {failures} failed.")
+    return successes, failures
 
 
 @cli.command()
