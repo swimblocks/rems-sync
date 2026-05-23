@@ -245,7 +245,7 @@ python -m src.main upload-deck-evals \
 
 Flags:
 - `--interactive`: prompt `y/n/q` before POSTing each row. Default if you just press Enter is `n` (skip). `q` aborts the rest of the batch.
-- `--recheck`: also process rows already marked `Deck Eval Recorded? = TRUE`. Use to verify that REMS actually has each eval; combined with `--interactive`, only rows missing from REMS will prompt.
+- `--recheck`: **verify-only** pass. Also includes rows already marked `Deck Eval Recorded? = TRUE`, confirms each one against REMS, and reports any missing from REMS as `MISSING`. Never POSTs and never prompts. To re-record the missing ones, un-tick `Deck Eval Recorded?` for those rows in the sheet and re-run without `--recheck`.
 - `--dry-run`: run all reads (including the per-row REMS lookups) but skip the POST and the sheet write-back.
 
 Expected sheet structure:

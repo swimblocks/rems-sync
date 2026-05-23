@@ -301,8 +301,8 @@ def upload_member_credentials(input_file, sheet_id, sheet_name):
 @click.option('--meet-name', default=None, help='Override meet name; if omitted, read from the Meet tab.')
 @click.option('--dry-run', is_flag=True, help='Print what would be posted without contacting REMS or writing back to the sheet.')
 @click.option('--interactive', is_flag=True, help='Prompt y/n/q before POSTing each evaluation.')
-@click.option('--recheck', is_flag=True, help='Include rows already marked Deck Eval Recorded? = TRUE. '
-                                              'Useful for verifying REMS actually has the evals.')
+@click.option('--recheck', is_flag=True, help='Verify-only pass: include rows already marked Deck Eval Recorded? = TRUE, '
+                                              'confirm against REMS, but never POST. Missing rows are reported.')
 def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_tab, meet_tab,
                      officials_tab, session_col, meet_name, dry_run, interactive, recheck):
     """Upload deck evaluations from a positions sheet to REMS and mark each row recorded."""
@@ -352,11 +352,12 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
     success_mask = positions_df['Deck Eval Success?'].apply(_is_true)
     if recheck:
         pending_mask = success_mask
-        click.echo("Recheck mode: including rows already marked Deck Eval Recorded? = TRUE.")
+        click.echo("Recheck mode: verifying every Deck Eval Success?=TRUE row against REMS (no POSTs).")
     else:
         pending_mask = success_mask & positions_df['Deck Eval Recorded?'].apply(_is_blank)
     pending = positions_df[pending_mask]
-    click.echo(f"Found {len(pending)} pending deck eval(s) to upload.")
+    noun = "row(s) to verify" if recheck else "pending deck eval(s) to upload"
+    click.echo(f"Found {len(pending)} {noun}.")
     if pending.empty:
         return
 
@@ -398,10 +399,18 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
                     meet=meet_name, description=description,
                 )
             except AlreadyRecordedError as e:
-                click.echo(f"  SKIP row {idx} ({name} / {position}): {e.message}")
+                click.echo(f"  OK row {idx} ({name} / {position}): {e.message}")
                 if not dry_run:
                     update_cell(sheet_id, positions_tab, idx, 'Deck Eval Recorded?', True, gsheet_client)
                 successes += 1
+                continue
+
+            if recheck:
+                # Verify-only: the row isn't in REMS. Report and move on, never POST.
+                click.echo(f"  MISSING row {idx} ({name} / {position}): "
+                           f"REMS has no matching {label} for meet={meet_name!r} "
+                           f"session={description!r}")
+                failures += 1
                 continue
 
             if dry_run:
