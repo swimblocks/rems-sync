@@ -1,6 +1,8 @@
-import pytest
-from src.utils import parse_season_to_id
 import click
+import pytest
+
+from src.utils import parse_season_to_id
+
 
 def test_parse_season_to_id_year():
     assert parse_season_to_id("2017") == 226
@@ -120,8 +122,9 @@ def test_count_existing_deck_evals():
     assert count_existing_deck_evals(credentials, "Chief Timer") == 1
 
 def test_to_rems_date_format():
-    from src.utils import to_rems_date_format
     from datetime import date
+
+    from src.utils import to_rems_date_format
     # REMS expects d/m/Y (matches the flatpickr display config); 12 April 2026 -> 12/04/2026.
     assert to_rems_date_format("2026-04-12") == "12/04/2026"
     assert to_rems_date_format("12/04/2026") == "12/04/2026"
@@ -153,8 +156,9 @@ def test_default_meet_dates_for():
 
 
 def test_parse_rems_date_to_iso():
-    from src.utils import parse_rems_date_to_iso
     from datetime import date
+
+    from src.utils import parse_rems_date_to_iso
     # REMS displays dates in d/m/Y format (per flatpickr config)
     assert parse_rems_date_to_iso("12/04/2026") == "2026-04-12"
     assert parse_rems_date_to_iso("1/4/2026") == "2026-04-01"

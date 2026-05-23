@@ -1,16 +1,36 @@
-import click
 import re
-import pandas as pd
 from io import StringIO
-from .rems_client import REMSClient, get_mfa_code
-from .gsheet import (
-    get_gspread_client, get_drive_session, get_credentials_identity,
-    write_df_to_sheet, read_sheet_tab, read_sheet_rows,
-    parse_meet_tab, parse_grid_session_dates, parse_officials_name_to_rems_id,
-    list_drive_subfolders, find_drive_sheet_in_folder, update_cell,
-    ensure_columns_after,
-)
 
+import click
+import pandas as pd
+
+from .gsheet import (
+    ensure_columns_after,
+    find_drive_sheet_in_folder,
+    get_credentials_identity,
+    get_drive_session,
+    get_gspread_client,
+    list_drive_subfolders,
+    parse_grid_session_dates,
+    parse_meet_tab,
+    parse_officials_name_to_rems_id,
+    read_sheet_rows,
+    read_sheet_tab,
+    update_cell,
+    write_df_to_sheet,
+)
+from .rems_client import REMSClient, get_mfa_code
+from .utils import (
+    count_existing_deck_evals,
+    deck_eval_credential_label,
+    default_meet_dates_for,
+    find_existing_deck_eval_in_dates,
+    find_existing_deck_eval_with_swapped_date,
+    parse_rems_date_to_iso,
+    parse_season_to_id,
+    to_rems_date_format,
+    validate_rems_id,
+)
 
 # Root Drive folder under which seasons -> meets -> sheets are organised.
 # (Specific to the Rowing-Hamilton officials Drive layout.)
@@ -102,17 +122,6 @@ def _discover_meet_sheets(season, root_folder_id, roster_substring, interactive)
     chosen_meet, chosen_sheet = meets_with_roster[idx]
     click.echo(f"Using meet {chosen_meet.get('name')!r} sheet {chosen_sheet.get('name')!r} ({chosen_sheet['id']})")
     return [_entry(chosen_meet, chosen_sheet)]
-from .utils import (
-    parse_season_to_id,
-    validate_rems_id,
-    deck_eval_credential_label,
-    count_existing_deck_evals,
-    find_existing_deck_eval_in_dates,
-    find_existing_deck_eval_with_swapped_date,
-    to_rems_date_format,
-    parse_rems_date_to_iso,
-    default_meet_dates_for,
-)
 
 
 class AlreadyRecordedError(click.ClickException):
@@ -395,7 +404,7 @@ def refresh_members(username, password, output, output_file, sheet_id, sheet_nam
     client = REMSClient(username, password, get_mfa_code)
     client.login()
     csv_data = client.get_members_csv(season_id)
-    
+
     if output == 'csv':
         if not output_file:
             click.echo("Output file is required for CSV output.", err=True)
@@ -424,7 +433,7 @@ def refresh_member_details(username, password, output, output_file, sheet_id, sh
     """Refreshes the REMS member details using REMS IDs from an input CSV."""
     season_id = parse_season_to_id(season)
     click.echo(f"Refreshing REMS member details (input: {input_file}, output: {output}, season: {season}, season_id: {season_id})")
-    
+
     try:
         df_input = pd.read_csv(input_file)
     except Exception as e:
@@ -438,21 +447,21 @@ def refresh_member_details(username, password, output, output_file, sheet_id, sh
         if normalized == "REMSID":
             rems_id_col = col
             break
-    
+
     if not rems_id_col:
         click.echo(f"Could not find REMS ID column in {input_file}. Found columns: {list(df_input.columns)}", err=True)
         return
 
     rems_ids_all = df_input[rems_id_col].dropna().unique()
     rems_ids = [rid for rid in rems_ids_all if validate_rems_id(rid)]
-    
+
     click.echo(f"Found {len(rems_ids)} valid unique REMS IDs in {rems_id_col} column.")
     if len(rems_ids) < len(rems_ids_all):
         click.echo(f"Skipped {len(rems_ids_all) - len(rems_ids)} invalid REMS IDs.")
 
     client = REMSClient(username, password, get_mfa_code)
     client.login()
-    
+
     all_details = []
     for rems_id in rems_ids:
         click.echo(f"Fetching details for {rems_id}...")
@@ -491,13 +500,13 @@ def refresh_member_credentials(username, password, output, output_file, sheet_id
     click.echo(f"Refreshing REMS member credentials (output: {output})")
     client = REMSClient(username, password, get_mfa_code)
     client.login()
-    
+
     try:
         member_details_df = pd.read_csv(member_details_file)
     except Exception as e:
         click.echo(f"Error reading member details file: {e}", err=True)
         return
-    
+
     all_credentials = []
     for _, row in member_details_df.iterrows():
         click.echo(f"Fetching credentials for {row['rems_id']}...")

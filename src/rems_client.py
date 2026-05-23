@@ -1,14 +1,13 @@
-import requests
-import click
 import json
-import os
 import re
 from pathlib import Path
 from urllib.parse import urljoin
-from urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
-from bs4 import BeautifulSoup
 
+import click
+import requests
+from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Transport-level retry for transient errors: timeouts, rate-limits, and
 # 5xx upstream errors. urllib3's Retry honours Retry-After automatically and
@@ -393,7 +392,7 @@ class REMSClient:
             if match:
                 member_id = match.group(2)
                 break
-        
+
         rems_id_input = soup.select_one('#member-member-identifiers-0-member-identifier')
         rems_id = rems_id_input.get('value') if rems_id_input else None
 
@@ -676,7 +675,7 @@ class REMSClient:
                     'expiry_date': columns[6].text.strip(),
                     'actions': ", ".join(actions),
                 })
-            
+
             page_number += 1
 
         return credentials
