@@ -954,9 +954,99 @@ def test_upload_deck_evals_processes_all_meets_when_not_interactive(
     assert result.exit_code == 0, result.output
     assert 'processing all' in result.output
     assert 'Pick a meet' not in result.output
+    # Both meet sheets were read.
     mock_read_tab.assert_any_call('sheet-a', 'Positions', mock_get_gs.return_value)
     mock_read_tab.assert_any_call('sheet-b', 'Positions', mock_get_gs.return_value)
     assert 'All meets done:' in result.output
+
+
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_recheck_interactive_prompts_to_add_missing(
+        mock_mfa, mock_client_class, mock_get_gs,
+        mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """--recheck --interactive: MISSING rows prompt the user to add them now."""
+    positions = pd.DataFrame([
+        {'Official Name': 'A B', 'Official Position': 'Inspector of Turns', 'Official Club': 'ROW',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P1',
+         'Deck Eval Recorded?': 'TRUE', 'Session': '6'},
+    ])
+    _patch_sheet_reads(mock_read_tab, mock_read_rows, positions_df=positions)
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC11112222', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    # No existing credentials -> MISSING
+    mock_client.get_member_credentials.return_value = []
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+    ]
+    mock_client.add_member_credential.return_value = True
+
+    # User says 'y' to add the missing eval.
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--sheet-id', 'fake-id',
+        '--recheck', '--interactive',
+    ], input='y\n')
+
+    assert result.exit_code == 0, result.output
+    assert 'MISSING row 0' in result.output
+    assert 'Add it now?' in result.output
+    # The regular Submit? prompt should NOT also fire (we already approved).
+    assert 'Submit?' not in result.output
+    mock_client.add_member_credential.assert_called_once()
+
+
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_recheck_interactive_skip_missing(
+        mock_mfa, mock_client_class, mock_get_gs,
+        mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """--recheck --interactive: declining the add leaves the row alone."""
+    positions = pd.DataFrame([
+        {'Official Name': 'A B', 'Official Position': 'Inspector of Turns', 'Official Club': 'ROW',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P1',
+         'Deck Eval Recorded?': 'TRUE', 'Session': '6'},
+    ])
+    _patch_sheet_reads(mock_read_tab, mock_read_rows, positions_df=positions)
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC11112222', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = []
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+    ]
+
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--sheet-id', 'fake-id',
+        '--recheck', '--interactive',
+    ], input='n\n')
+
+    assert result.exit_code == 0, result.output
+    assert 'MISSING row 0' in result.output
+    assert '(skipped)' in result.output
+    mock_client.add_member_credential.assert_not_called()
 
 
 @patch('src.main.read_sheet_rows')
