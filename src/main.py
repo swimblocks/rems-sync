@@ -292,13 +292,14 @@ def upload_member_credentials(input_file, sheet_id, sheet_name):
 @click.option('--meet-tab', default='Meet', help='Name of the meet tab (key/value meet metadata).')
 @click.option('--officials-tab', default='Officials', help='Name of the officials tab (Name -> REMS ID lookup).')
 @click.option('--session-col', default='Session', help='Column in the positions tab that identifies a session.')
+@click.option('--rems-club', default='ROW', help='Only process rows whose Official Club matches this. Default: ROW.')
 @click.option('--meet-name', default=None, help='Override meet name; if omitted, read from the Meet tab.')
 @click.option('--dry-run', is_flag=True, help='Print what would be posted without contacting REMS or writing back to the sheet.')
 @click.option('--interactive', is_flag=True, help='Prompt y/n/q before POSTing each evaluation.')
 @click.option('--recheck', is_flag=True, help='Verify-only pass: include rows already marked Deck Eval Recorded? = TRUE, '
                                               'confirm against REMS, but never POST. Missing rows are reported.')
 def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_tab, meet_tab,
-                     officials_tab, session_col, meet_name, dry_run, interactive, recheck):
+                     officials_tab, session_col, rems_club, meet_name, dry_run, interactive, recheck):
     """Upload deck evaluations from a positions sheet to REMS and mark each row recorded."""
     season_id = parse_season_to_id(season)
     gsheet_client = get_gspread_client()
@@ -333,7 +334,7 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
     )
     click.echo(f"Loaded {len(name_to_rems_id)} officials from {officials_tab!r}.")
 
-    required = ['Official Name', 'Official Position', 'Deck Eval Success?', 'Deck Eval Provider', 'Deck Eval Recorded?', session_col]
+    required = ['Official Name', 'Official Position', 'Official Club', 'Deck Eval Success?', 'Deck Eval Provider', 'Deck Eval Recorded?', session_col]
     missing = [c for c in required if c not in positions_df.columns]
     if missing:
         raise click.ClickException(f"Positions tab is missing required columns: {missing}")
@@ -344,14 +345,18 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
         return str(v).strip() == '' or str(v).strip().upper() == 'FALSE'
 
     success_mask = positions_df['Deck Eval Success?'].apply(_is_true)
+    club_mask = positions_df['Official Club'].astype(str).str.strip().str.casefold() == rems_club.strip().casefold()
     if recheck:
-        pending_mask = success_mask
+        pending_mask = success_mask & club_mask
         click.echo("Recheck mode: verifying every Deck Eval Success?=TRUE row against REMS (no POSTs).")
     else:
-        pending_mask = success_mask & positions_df['Deck Eval Recorded?'].apply(_is_blank)
+        pending_mask = success_mask & club_mask & positions_df['Deck Eval Recorded?'].apply(_is_blank)
     pending = positions_df[pending_mask]
+    excluded_other_club = int((success_mask & ~club_mask).sum())
     noun = "row(s) to verify" if recheck else "pending deck eval(s) to upload"
-    click.echo(f"Found {len(pending)} {noun}.")
+    click.echo(f"Found {len(pending)} {noun} for club {rems_club!r}"
+               + (f" ({excluded_other_club} other-club row(s) skipped)" if excluded_other_club else "")
+               + ".")
     if pending.empty:
         return
 

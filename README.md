@@ -237,6 +237,7 @@ python -m src.main upload-deck-evals \
   [--meet-tab Meet] \
   [--officials-tab Officials] \
   [--session-col Session] \
+  [--rems-club ROW] \
   [--meet-name "Override"] \
   [--interactive] \
   [--recheck] \
@@ -244,13 +245,14 @@ python -m src.main upload-deck-evals \
 ```
 
 Flags:
+- `--rems-club`: only process rows whose `Official Club` column matches this value (case-insensitive). You can only add deck evaluations for officials registered under your own club in REMS, so the tool skips other-club rows by default. Defaults to `ROW`.
 - `--interactive`: prompt `y/n/q` before POSTing each row. Default if you just press Enter is `n` (skip). `q` aborts the rest of the batch.
 - `--recheck`: **verify-only** pass. Also includes rows already marked `Deck Eval Recorded? = TRUE`, confirms each one against REMS, and reports any missing from REMS as `MISSING`. Never POSTs and never prompts. To re-record the missing ones, un-tick `Deck Eval Recorded?` for those rows in the sheet and re-run without `--recheck`.
 - `--dry-run`: run all reads (including the per-row REMS lookups) but skip the POST and the sheet write-back.
 
 Expected sheet structure:
 
-- **Positions tab** (default `Positions`) — one row per official per session. Required columns: `Official Name`, `Official Position`, `Deck Eval Success?`, `Deck Eval Provider`, `Deck Eval Recorded?`, and the session-identifier column (default `Session`).
+- **Positions tab** (default `Positions`) — one row per official per session. Required columns: `Official Name`, `Official Position`, `Official Club`, `Deck Eval Success?`, `Deck Eval Provider`, `Deck Eval Recorded?`, and the session-identifier column (default `Session`).
 - **Grid tab** (default `Grid`) — 2D layout. Each session is a column header containing multi-line text such as `"Session 1\nFriday, Apr 10\nSenior Briefing: 3:55 pm\n..."`. The tool extracts the session number and date from this header. The year is taken from the Meet tab's `Meet Start Date`, falling back to the `--season` end year.
 - **Meet tab** (default `Meet`) — key/value layout (column A label, column B value). The tool reads `Meet Name` (or `Name`) and `Meet Start Date`. Override the meet name with `--meet-name` to skip this lookup.
 - **Officials tab** (default `Officials`) — name → REMS ID lookup. The tool finds the header row by looking for `Name` and `REMS ID` cells and builds the map from subsequent rows. Used to translate Positions-tab names into REMS IDs, which is more reliable than name-based REMS search.
@@ -271,11 +273,12 @@ Other positions are used verbatim. Add new mappings in [src/utils.py](src/utils.
 
 ##### Pending-row filter
 
-A row is considered "pending" when both:
-- `Deck Eval Success?` is `TRUE` / `YES` / `1` (case- and whitespace-insensitive), AND
-- `Deck Eval Recorded?` is empty or `FALSE`.
+A row is considered "pending" when all of:
+- `Deck Eval Success?` is `TRUE` / `YES` / `1` (case- and whitespace-insensitive),
+- `Deck Eval Recorded?` is empty or `FALSE`, AND
+- `Official Club` matches `--rems-club` (default `ROW`).
 
-`--recheck` removes the second condition.
+`--recheck` removes the second condition but keeps the club filter.
 
 ##### Per-row outcomes
 
