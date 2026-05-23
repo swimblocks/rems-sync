@@ -1,3 +1,4 @@
+import click
 import pandas as pd
 import pytest
 from click.testing import CliRunner
@@ -896,6 +897,77 @@ def test_upload_deck_evals_discovers_and_prompts_when_interactive(
     assert 'Pick a meet' in result.output
     # And the picked sheet id flowed through to the read calls.
     mock_read_tab.assert_any_call('sheet-abc', 'Positions', mock_get_gs.return_value)
+
+
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.get_drive_session')
+@patch('src.main.list_drive_subfolders')
+@patch('src.main.find_drive_sheet_in_folder')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_skips_broken_meet_continues_batch(
+        mock_mfa, mock_client_class,
+        mock_find_sheet, mock_list_folders, mock_get_drive,
+        mock_get_gs, mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """If one meet's sheet is missing a tab, log SKIP and process the others."""
+    def list_subfolders_side_effect(drive, folder_id, drive_id=None):
+        return {
+            'root': [{'id': 'season-2025', 'name': '2025-2026 Season'}],
+            'season-2025': [
+                {'id': 'meet-broken', 'name': 'Broken Meet'},
+                {'id': 'meet-ok', 'name': 'OK Meet'},
+            ],
+        }[folder_id]
+    mock_list_folders.side_effect = list_subfolders_side_effect
+
+    def find_sheet_side_effect(drive, folder_id, substring, drive_id=None):
+        return {
+            'meet-broken': {'id': 'sheet-broken', 'name': 'Broken Meet Roster'},
+            'meet-ok': {'id': 'sheet-ok', 'name': 'OK Meet Roster'},
+        }[folder_id]
+    mock_find_sheet.side_effect = find_sheet_side_effect
+
+    # The broken sheet raises ClickException on Positions tab read; the OK
+    # sheet uses the standard fixture.
+    def read_sheet_tab_side_effect(sheet_id, tab, client):
+        if sheet_id == 'sheet-broken':
+            raise click.ClickException(f"Tab {tab!r} not found in sheet {sheet_id}.")
+        if tab == 'Positions':
+            return _positions_df()
+        raise AssertionError(f"unexpected read_sheet_tab call: {sheet_id} / {tab}")
+    mock_read_tab.side_effect = read_sheet_tab_side_effect
+    mock_read_rows.side_effect = lambda sheet_id, tab, client: {
+        'Grid': _grid_rows(), 'Meet': _meet_rows(), 'Officials': _officials_rows(),
+    }[tab]
+
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = []
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+    ]
+    mock_client.add_member_credential.return_value = True
+
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--season-folder-id', 'root',
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert "SKIP meet 'Broken Meet'" in result.output
+    assert "1 meets skipped" in result.output
+    # The good meet still got processed.
+    mock_client.add_member_credential.assert_called_once()
 
 
 @patch('src.main.update_cell')

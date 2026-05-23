@@ -100,6 +100,20 @@ def test_update_cell_unknown_column_raises():
         update_cell('fake-id', 'positions', 0, 'Missing', True, client)
 
 
+def test_read_sheet_tab_missing_worksheet_raises_clickexception():
+    """Missing tab should raise a ClickException with a clear message, not gspread's WorksheetNotFound."""
+    import gspread.exceptions
+    import click
+    mock_worksheet = MagicMock()
+    mock_client = MagicMock()
+    mock_spreadsheet = MagicMock()
+    mock_client.open_by_key.return_value = mock_spreadsheet
+    mock_spreadsheet.worksheet.side_effect = gspread.exceptions.WorksheetNotFound("Meet")
+
+    with pytest.raises(click.ClickException, match="not found in sheet"):
+        read_sheet_tab('fake-id', 'Meet', mock_client)
+
+
 def test_parse_meet_tab_handles_blank_header_row():
     rows = [
         ['', ''],
