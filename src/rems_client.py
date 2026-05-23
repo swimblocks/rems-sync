@@ -122,71 +122,132 @@ class REMSClient:
     def login(self, use_cache=True):
         """Logs in to the REMS system.
 
-        Strategy (cheapest to most expensive):
-          1. Cached cookies + probe — skip everything if still authenticated.
-          2. Drop session cookies but keep mfa_* (the "known device" cookies) and
-             POST Maint-Login. REMS recognises the device, the redirect chain
-             goes mfa-login/ -> logged-in.php -> /club_home.php, and OTP is skipped.
-          3. If REMS still routes us to mfa-verify-otp, prompt for MFA.
+        Browser flow (per inspection in Chrome incognito):
+          GET /maint.php (200, login form)
+          POST /Maint-Login.php (302 to /sportlomo/users/mfa-login/, sets PHPSESSID)
+          GET /sportlomo/users/mfa-login/ (302 to /sportlomo/users/mfa-verify-otp,
+              sets mfa_token + mfa_tokens AND triggers the OTP email)
+          GET /sportlomo/users/mfa-verify-otp (200, OTP form)
+          POST /sportlomo/users/mfa-verify-otp with digits + form CSRF token
+              (302 to /logged-in.php, sets mfa_token + mfa_tokens + mfa_uuid)
+          GET /logged-in.php (302 to /club_home.php)
+          GET /club_home.php (200)
+
+        Walk one hop at a time so we don't make spurious GETs on /mfa-login that
+        send extra OTP emails.
         """
         if use_cache and self._load_cookies() and self._probe_session():
             click.echo("Using cached REMS session (MFA skipped)")
             return True
 
-        # Preserve the "known device" cookies so REMS skips OTP; drop stale session cookies.
-        self._load_cookies()  # in case cache exists but probe failed
-        self._keep_only_mfa_cookies()
+        # Start clean — stale mfa_* cookies from a previous device-session can
+        # make REMS bounce mfa-login/ <-> mfa-verify-otp instead of rendering
+        # the OTP form.
+        self.session.cookies.clear()
 
-        login_url = f"{self.BASE_URL}/Maint-Login.php"
-        login_payload = {"username": self.username, "password": self.password}
-        response = self.session.post(login_url, data=login_payload, allow_redirects=False)
+        # 1. GET the login form page to seed the session.
+        self.session.get(f"{self.BASE_URL}/maint.php", allow_redirects=False)
+
+        # 2. POST credentials.
+        response = self.session.post(
+            f"{self.BASE_URL}/Maint-Login.php",
+            data={"username": self.username, "password": self.password},
+            allow_redirects=False,
+        )
         response.raise_for_status()
-
         if response.status_code != 302:
-            raise Exception("Login failed: Unexpected status code on login")
+            raise Exception(
+                f"Login failed: expected 302 from Maint-Login, got {response.status_code}"
+            )
 
-        last_url = login_url
-        next_url = urljoin(last_url, response.headers["Location"])
-        for _ in range(8):  # safety cap on redirect chain
-            if "mfa-verify-otp" in next_url:
-                return self._do_mfa()
+        next_url = urljoin(f"{self.BASE_URL}/Maint-Login.php", response.headers["Location"])
+        last_url = f"{self.BASE_URL}/Maint-Login.php"
+
+        # 3. Walk the chain one hop at a time. Stop at either the OTP form
+        # (mfa-verify-otp, returns 200 with the form HTML) or a logged-in
+        # landing page (any other 200).
+        for _ in range(8):
             response = self.session.get(next_url, allow_redirects=False)
             response.raise_for_status()
             last_url = next_url
             if response.status_code != 302:
-                if self._probe_session():
-                    click.echo("Login successful (cached MFA token honored, OTP skipped)")
-                    self._save_cookies()
-                    return True
-                raise Exception(
-                    f"Login: landed at {next_url} (status {response.status_code}) but probe says not authenticated"
-                )
+                break
             next_url = urljoin(last_url, response.headers["Location"])
-        raise Exception("Login: too many redirects without reaching MFA or a logged-in page")
+        else:
+            raise Exception("Login: too many redirects without reaching a final page")
 
-    def _do_mfa(self):
+        # 4. If we landed on the OTP form page, prompt + submit.
+        if "/sportlomo/users/mfa-verify-otp" in last_url:
+            return self._do_mfa(otp_form_url=last_url, otp_form_html=response.text)
+
+        # 5. Otherwise the session should already be live — probe to confirm.
+        if self._probe_session():
+            click.echo("Login successful (cached MFA token honored, OTP skipped)")
+            self._save_cookies()
+            return True
+        raise Exception(
+            f"Login: landed at {last_url} (status {response.status_code}) but probe says not authenticated"
+        )
+
+    def _do_mfa(self, otp_form_url, otp_form_html):
+        """Prompt for an OTP and submit it. Reads the form HTML for any hidden
+        inputs (e.g. CSRF token) and includes them in the POST so REMS treats
+        it the same as a browser-submitted form."""
+        soup = BeautifulSoup(otp_form_html, 'lxml')
+        # Carry forward all hidden inputs from the form (catches CSRF tokens,
+        # YII_CSRF_TOKEN, etc., without needing to know their exact name).
+        hidden_fields = {}
+        for inp in soup.select('form input[type="hidden"]'):
+            name = inp.get('name')
+            if name:
+                hidden_fields[name] = inp.get('value', '')
+
         mfa_code = self.mfa_callback()
         if not mfa_code or len(mfa_code) != 6:
             raise Exception("Invalid MFA code")
 
-        mfa_payload = {
+        mfa_payload = dict(hidden_fields)
+        mfa_payload.update({
             "digit_1": mfa_code[0],
             "digit_2": mfa_code[1],
             "digit_3": mfa_code[2],
             "digit_4": mfa_code[3],
             "digit_5": mfa_code[4],
             "digit_6": mfa_code[5],
-        }
+        })
         mfa_verify_url = f"{self.BASE_URL}/sportlomo/users/mfa-verify-otp"
-        response = self.session.post(mfa_verify_url, data=mfa_payload, allow_redirects=False)
+        response = self.session.post(
+            mfa_verify_url, data=mfa_payload,
+            headers={"Referer": otp_form_url},
+            allow_redirects=False,
+        )
         response.raise_for_status()
+        if response.status_code != 302:
+            raise Exception(
+                f"MFA verification failed: expected 302, got {response.status_code} (OTP rejected?)"
+            )
+        location = response.headers.get("Location", "")
+        if "mfa-login" in location or "Maint-Login" in location or "mfa-verify-otp" in location:
+            raise Exception(f"MFA verification failed: OTP rejected ({location!r})")
 
-        if response.status_code != 302 or response.headers["Location"] != f"{self.BASE_URL}/logged-in.php":
-            raise Exception("MFA verification failed")
+        # Browser flow continues: 302 -> /logged-in.php -> /club_home.php. Walk it.
+        last_url = mfa_verify_url
+        next_url = urljoin(last_url, location)
+        for _ in range(8):
+            response = self.session.get(next_url, allow_redirects=False)
+            response.raise_for_status()
+            last_url = next_url
+            if response.status_code != 302:
+                break
+            next_url = urljoin(last_url, response.headers["Location"])
 
-        click.echo("Login successful")
-        self._save_cookies()
-        return True
+        if self._probe_session():
+            click.echo("Login successful")
+            self._save_cookies()
+            return True
+        raise Exception(
+            f"MFA verification failed: landed at {last_url} but probe says not authenticated"
+        )
 
     def logout(self):
         """Logs out of the REMS system."""

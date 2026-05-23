@@ -2,33 +2,18 @@
 
 How the `add-deck-eval` and `upload-deck-evals` commands write Swimming Canada deck evaluations to REMS from either a single CLI invocation or a meet's Google Sheet.
 
-The user-facing docs (commands, flags, sheet layout) live in [README.md](../README.md). This document covers the underlying flow, the REMS endpoints involved, and the non-obvious behaviors.
+The user-facing docs (commands, flags, sheet layout) live in [README.md](../README.md). For authentication / MFA / cookie cache details see [docs/auth.md](auth.md). This document covers the deck-eval-specific REMS endpoints and the non-obvious behaviors.
 
 ## REMS endpoints
 
 | Step | Method | URL | Notes |
 |---|---|---|---|
-| Login | `POST` | `/Maint-Login.php` | Form-encoded `username` + `password`. With a valid `mfa_*` cookie REMS skips OTP. |
-| MFA OTP | `POST` | `/sportlomo/users/mfa-verify-otp` | Six `digit_N` form fields. Only when REMS doesn't honor the device. |
-| Sportlomo session init | `GET` | `/logged-in.php` | Visited as part of the login redirect chain; sets the `Authentication-JWT` cookie. |
-| Probe (is the session still good?) | `POST` | `/sportlomo/user/MembershipManagement/members` | Empty filter form. 200 ⇒ authenticated; 403 ⇒ JWT lapsed. |
 | Resolve REMS ID → `member_season_id` | `POST` | `/sportlomo/user/MembershipManagement/members` | Filter by `FilterForm[primary_identifier]`. Parses the actions cell of the result row. |
 | Resolve `member_id` | `GET` | `/sportlomo/user/membership-management/member-detail/{msid}` | Parses the `member-credentials-details/{msid}/{mid}` link out of the member detail page. |
 | Existing credentials | `POST` | `/sportlomo/user/credentials/member-credentials-details/{msid}/{mid}` | Paginated. Includes `actions` URLs to each individual credential. |
 | Existing credential detail | `GET` | `/sportlomo/user/credentials/view-from-member-profile/{msid}/{mid}/{cid}` | Used to compare an existing credential's meet + session against the one being added. |
 | Available credentials for a type | `GET` then `POST` | `/sportlomo/user/credentials/add-member-credential/{msid}/{mid}` + `/sportlomo/user/credentials/update-credential-form` | The form has a Type dropdown (Deck Evaluation = type 127). Selecting a type triggers an XHR to `update-credential-form` with the full form payload and `nextStep=credential-name`, which returns JSON `{credentials: [{id, name, ...}]}`. |
-| Add credential | `POST` | `/sportlomo/user/credentials/add-member-credential/{msid}/{mid}` | Multipart form. Success = HTTP 302 to `member-credentials-details/...`. |
-
-## Login flow
-
-The login routine in `REMSClient.login()` tries strategies in order of cost:
-
-1. **Cookie cache hit + probe.** Load `~/.rems-sync/cookies.json`, POST the probe endpoint. If 200, return immediately — no network login.
-2. **Known-device login.** Drop everything except the `mfa_*` cookies (a stale `PHPSESSID` causes REMS to bounce the request to the login page), then POST `/Maint-Login.php`. REMS recognises the device and the redirect chain proceeds:
-   `Maint-Login → mfa-login/ → logged-in.php → /club_home.php`. After the chain the probe is re-run to confirm.
-3. **Full MFA.** Only if REMS routes us to `mfa-verify-otp` does the tool prompt for an OTP.
-
-If any authenticated call returns 403 mid-batch (the `Authentication-JWT` cookie has a 1-hour `Max-Age` and can lapse during long interactive sessions), `REMSClient._request` triggers a single full re-login and retries the original call.
+| Add credential | `POST` | `/sportlomo/user/credentials/add-member-credential/{msid}/{mid}` | Multipart form. Success = HTTP 302 to `member-credentials-details/...`. `start_date` must be `d/m/Y` (per the form's flatpickr config) — sending US-format `m/d/Y` silently records the wrong date. |
 
 ## Per-row flow in `upload-deck-evals`
 
@@ -92,8 +77,3 @@ Both commands feed the helper the same way but with different date sets:
 
 `provider_identifier` and `description` are ignored on purpose — manually-entered REMS evaluations may have arbitrary meet-name strings, but the dates are reliable.
 
-## Open questions
-
-These came up during build-out and are tracked in code comments / the cookie-refresh investigation:
-
-- **JWT-only refresh without MFA**: when only the JWT has lapsed but the `mfa_*` cookies and `PHPSESSID` are still good, the known-device login path covers it. Whether a cheaper refresh endpoint exists is unknown.
