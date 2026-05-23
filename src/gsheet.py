@@ -130,13 +130,25 @@ def write_df_to_sheet(df, sheet_id, sheet_name, client):
     worksheet.update([df_final.columns.values.tolist()] + df_final.values.tolist())
     click.echo(f"Successfully wrote data to sheet: {sheet_name}")
 
+def _open_worksheet(client, sheet_id, sheet_name):
+    """Open a worksheet by tab name, raising a click.ClickException with a
+    clear message if the tab doesn't exist (instead of gspread's raw
+    WorksheetNotFound)."""
+    spreadsheet = client.open_by_key(sheet_id)
+    try:
+        return spreadsheet.worksheet(sheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+        raise click.ClickException(
+            f"Tab {sheet_name!r} not found in sheet {sheet_id}."
+        )
+
+
 def read_sheet_tab(sheet_id, sheet_name, client):
     """
     Read a named tab from a Google Sheet and return it as a pandas DataFrame.
     Treats the first row as the header. Empty cells become empty strings.
     """
-    spreadsheet = client.open_by_key(sheet_id)
-    worksheet = spreadsheet.worksheet(sheet_name)
+    worksheet = _open_worksheet(client, sheet_id, sheet_name)
     rows = worksheet.get_all_values()
     if not rows:
         return pd.DataFrame()
@@ -145,8 +157,7 @@ def read_sheet_tab(sheet_id, sheet_name, client):
 
 def read_sheet_rows(sheet_id, sheet_name, client):
     """Return raw rows (list of lists of strings) from the named tab. No header inference."""
-    spreadsheet = client.open_by_key(sheet_id)
-    worksheet = spreadsheet.worksheet(sheet_name)
+    worksheet = _open_worksheet(client, sheet_id, sheet_name)
     return worksheet.get_all_values()
 
 
@@ -256,8 +267,7 @@ def update_cell(sheet_id, sheet_name, row_index, col_name, value, client):
     row after the header). `col_name` is the column header name as it appears
     in the first row of the tab.
     """
-    spreadsheet = client.open_by_key(sheet_id)
-    worksheet = spreadsheet.worksheet(sheet_name)
+    worksheet = _open_worksheet(client, sheet_id, sheet_name)
     header = worksheet.row_values(1)
     if col_name not in header:
         raise ValueError(f"Column {col_name!r} not found in tab {sheet_name!r}. Headers: {header}")
