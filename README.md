@@ -249,7 +249,7 @@ python -m src.main upload-deck-evals \
 Flags:
 - `--rems-club`: only process rows whose `Official Club` column matches this value (case-insensitive). You can only add deck evaluations for officials registered under your own club in REMS, so the tool skips other-club rows by default. Defaults to `ROW`.
 - `--interactive`: prompt `y/n/q` before POSTing each row. Default if you just press Enter is `n` (skip). `q` aborts the rest of the batch.
-- `--recheck`: **verify-only** pass. Also includes rows already marked `Deck Eval Recorded? = TRUE`, confirms each one against REMS, and reports any missing from REMS as `MISSING`. Never POSTs and never prompts. To re-record the missing ones, un-tick `Deck Eval Recorded?` for those rows in the sheet and re-run without `--recheck`.
+- `--recheck`: **verify-only** pass. Also includes rows already marked `Deck Eval Recorded? = TRUE`, confirms each one against REMS, and reports any missing from REMS as `MISSING`. Rows where REMS holds the eval but with the day and month accidentally swapped (a legacy bug from an earlier build of this tool) are flagged `SWAPPED` so you can correct the date in REMS. Never POSTs and never prompts. To re-record the missing ones, un-tick `Deck Eval Recorded?` for those rows in the sheet and re-run without `--recheck`.
 - `--dry-run`: run all reads (including the per-row REMS lookups) but skip the POST and the sheet write-back.
 
 Expected sheet structure:

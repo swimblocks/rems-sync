@@ -14,6 +14,7 @@ from .utils import (
     deck_eval_credential_label,
     count_existing_deck_evals,
     find_existing_deck_eval_in_dates,
+    find_existing_deck_eval_with_swapped_date,
     to_rems_date_format,
     parse_rems_date_to_iso,
     default_meet_dates_for,
@@ -113,10 +114,13 @@ def _resolve_deck_eval_credential(client, member_season_id, member_id, position,
     )
 
 
-def _prompt_for_credential_family(options, sheet_position):
+def _prompt_for_credential_family(options, sheet_position, row_idx, name, rems_id):
     """Show a numbered list of unique credential families and return the
-    chosen family name, or None to skip the row."""
+    chosen family name, or None to skip the row. The row's identifying info
+    is printed first so the prompt isn't ambiguous after a batch of OK lines."""
     families = _unique_credential_families(options)
+    click.echo("")
+    click.echo(f"  Row {row_idx}: {name} ({rems_id}) / sheet position {sheet_position!r}")
     click.echo(f"    Sheet position {sheet_position!r} doesn't match a known credential.")
     click.echo("    What credential was this evaluation for?")
     for i, fam in enumerate(families, 1):
@@ -445,6 +449,23 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
                 raise click.ClickException(f"could not resolve member_id for {name!r} (REMS {rems_id})")
 
             cached_existing, cached_options = _fetch_eval_state(client, member_season_id, member_id)
+
+            # Recheck: spot the legacy m/d/Y date-swap bug before the resolve
+            # may raise (e.g. at-max). A swap takes up a position slot in REMS,
+            # so we want to flag it independently of whatever resolve would say.
+            if recheck:
+                swap_cred = find_existing_deck_eval_with_swapped_date(
+                    cached_existing, position, set(session_dates.values()),
+                )
+                if swap_cred is not None:
+                    click.echo(
+                        f"  SWAPPED row {idx} ({name} / {position}): existing "
+                        f"{swap_cred.get('name')!r} has start_date {swap_cred.get('start_date')} "
+                        f"(day/month swapped — legacy m/d/Y bug; needs editing in REMS)"
+                    )
+                    failures += 1
+                    continue
+
             try:
                 credential_id, type_id, eval_number, label = _resolve_deck_eval_credential(
                     client, member_season_id, member_id, position,
@@ -460,7 +481,10 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
             except NoMatchingCredentialError as e:
                 if not interactive:
                     raise
-                chosen = _prompt_for_credential_family(e.options, sheet_position=position)
+                chosen = _prompt_for_credential_family(
+                    e.options, sheet_position=position,
+                    row_idx=idx, name=name, rems_id=rems_id,
+                )
                 if chosen is None:
                     click.echo(f"  SKIP row {idx} ({name} / {position}): no credential picked")
                     failures += 1
@@ -479,7 +503,8 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
                     continue
 
             if recheck:
-                # Verify-only: the row isn't in REMS. Report and move on, never POST.
+                # Verify-only: the row isn't in REMS (no real match, no swap).
+                # Report and move on, never POST.
                 click.echo(f"  MISSING row {idx} ({name} / {position}): "
                            f"REMS has no matching {label} for meet={meet_name!r} "
                            f"session={description!r}")

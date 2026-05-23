@@ -439,6 +439,54 @@ def test_upload_deck_evals_recheck_verify_only(mock_mfa, mock_client_class, mock
 @patch('src.main.get_gspread_client')
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
+def test_upload_deck_evals_recheck_detects_swapped_dates(mock_mfa, mock_client_class, mock_get_gs,
+                                                         mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """In --recheck, an existing eval with a day/month-swapped date (legacy bug)
+    is flagged as SWAPPED rather than MISSING."""
+    positions = pd.DataFrame([
+        {'Official Name': 'A B', 'Official Position': 'Inspector of Turns', 'Official Club': 'ROW',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P1',
+         'Deck Eval Recorded?': 'TRUE', 'Session': '6'},
+    ])
+    _patch_sheet_reads(mock_read_tab, mock_read_rows, positions_df=positions)
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC11112222', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    # Session 6 in the grid fixture is April 12, 2026 (ISO 2026-04-12).
+    # The swap of 2026-04-12 is 2026-12-04 (December 4) -> REMS d/m/Y display 04/12/2026.
+    mock_client.get_member_credentials.return_value = [
+        {'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #1',
+         'start_date': '04/12/2026'},
+    ]
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+    ]
+
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--sheet-id', 'fake-id',
+        '--recheck',
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert 'SWAPPED row 0' in result.output
+    assert '04/12/2026' in result.output
+    assert 'MISSING' not in result.output
+    mock_client.add_member_credential.assert_not_called()
+
+
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
 def test_upload_deck_evals_recheck_does_not_prompt_for_missing(mock_mfa, mock_client_class, mock_get_gs,
                                                                 mock_read_tab, mock_read_rows, mock_update_cell, runner):
     """--recheck + --interactive: missing rows are reported but NEVER prompt."""
