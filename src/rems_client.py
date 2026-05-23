@@ -5,7 +5,29 @@ import os
 import re
 from pathlib import Path
 from urllib.parse import urljoin
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 from bs4 import BeautifulSoup
+
+
+# Transport-level retry for transient errors: timeouts, rate-limits, and
+# 5xx upstream errors. urllib3's Retry honours Retry-After automatically and
+# implements exponential backoff so we don't have to.
+_RETRY_STATUS_FORCELIST = frozenset((408, 425, 429, 500, 502, 503, 504, 509, 522, 524))
+
+
+def _build_retry():
+    return Retry(
+        total=4,
+        backoff_factor=1,  # urllib3 default 0; bumps gaps to 0s, 2s, 4s, 8s
+        status_forcelist=_RETRY_STATUS_FORCELIST,
+        # allowed_methods=None means "retry all methods including POST". REMS's
+        # transient errors (502 from a busy backend) typically mean the request
+        # never reached the app, so POST retries are safe in practice.
+        allowed_methods=None,
+        respect_retry_after_header=True,
+        raise_on_status=False,
+    )
 
 
 def _default_cookie_cache_path():
@@ -20,6 +42,9 @@ class REMSClient:
         self.password = password
         self.mfa_callback = mfa_callback
         self.session = requests.Session()
+        adapter = HTTPAdapter(max_retries=_build_retry())
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         self.cookie_cache_path = (
             Path(cookie_cache_path) if cookie_cache_path is not None
             else _default_cookie_cache_path()
@@ -70,11 +95,13 @@ class REMSClient:
                 pass
 
     def _request(self, method, url, **kwargs):
-        """Authenticated HTTP request that automatically re-authenticates once on 403.
+        """Authenticated HTTP request with a 403 → re-auth safety net.
 
-        This is the long-running-batch safety net: the Authentication-JWT cookie
-        has a 1h Max-Age, so a slow interactive batch can outlive it. On 403 we
-        clear the cache, do a full MFA re-login, then retry the original call.
+        Transient 5xx / rate-limit retries happen at the transport layer
+        (urllib3 Retry, configured in __init__). This method only handles
+        the REMS-specific 403 case: the Authentication-JWT cookie has a
+        1h Max-Age and can lapse mid-batch, in which case we run a full
+        MFA re-login and retry the call once.
         """
         if getattr(self, '_in_login_flow', False):
             return self.session.request(method, url, **kwargs)
