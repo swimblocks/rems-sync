@@ -8,6 +8,7 @@ from .gsheet import (
     write_df_to_sheet, read_sheet_tab, read_sheet_rows,
     parse_meet_tab, parse_grid_session_dates, parse_officials_name_to_rems_id,
     list_drive_subfolders, find_drive_sheet_in_folder, update_cell,
+    ensure_columns_after,
 )
 
 
@@ -605,6 +606,24 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
                          session_col, rems_club, meet_name_override,
                          dry_run, interactive, recheck):
     """Process a single meet's roster sheet. Returns (successes, failures)."""
+    # Older roster sheets are missing the Deck Eval Provider / Deck Eval
+    # Recorded? columns. Add them now so the rest of the flow works (and so
+    # the sheet ends up with the canonical schema for future runs).
+    if not dry_run:
+        try:
+            ensure_columns_after(
+                gsheet_client, sheet_id, positions_tab,
+                anchor='Deck Eval Success?',
+                columns=[
+                    {'name': 'Deck Eval Provider', 'format': 'TEXT'},
+                    {'name': 'Deck Eval Recorded?', 'format': 'CHECKBOX'},
+                ],
+            )
+        except click.ClickException as e:
+            # Anchor missing or some other schema issue — fall through and let
+            # the existing column-required checks surface the problem.
+            click.echo(f"  (could not auto-add Provider/Recorded? columns: {e.message})", err=True)
+
     positions_df = read_sheet_tab(sheet_id, positions_tab, gsheet_client)
     meet_meta = parse_meet_tab(read_sheet_rows(sheet_id, meet_tab, gsheet_client))
     meet_name = meet_name_override
@@ -696,6 +715,11 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
         name = str(row['Official Name']).strip()
         position = str(row[position_col]).strip()
         provider = str(row['Deck Eval Provider']).strip() if 'Deck Eval Provider' in row else ''
+        # If the Provider column accidentally inherited checkbox formatting
+        # from a previous bug, cells read back as 'TRUE'/'FALSE'. Treat
+        # those as no-value so the MISSING-add prompt fires.
+        if provider.upper() in ('TRUE', 'FALSE'):
+            provider = ''
         session = str(row[session_col]).strip()
         date_raw = session_dates.get(session)
         if not date_raw:
@@ -791,6 +815,10 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
             # used to suppress the regular interactive Submit? prompt below
             # when we already prompted via the recheck-missing path.
             recheck_missing_approved = False
+            # Track whether the provider name came from the prompt (vs the
+            # sheet) so we can persist it back to the Deck Eval Provider cell
+            # after a successful add.
+            provider_prompted = False
             if recheck:
                 if interactive:
                     click.echo(
@@ -811,6 +839,15 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
                         failures += 1
                         continue
                     recheck_missing_approved = True
+                    # The sheet may not have a Deck Eval Provider value (or
+                    # column) for this row — prompt the user so REMS doesn't
+                    # end up with a blank provider field.
+                    if not provider:
+                        provider = click.prompt(
+                            "    Deck Eval Provider (evaluator name)",
+                            default="", show_default=False,
+                        ).strip()
+                        provider_prompted = bool(provider)
                     # Fall through to the POST logic.
                 else:
                     # Verify-only with no prompt: report and continue.
@@ -859,6 +896,10 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
             )
             if recorded_col:
                 update_cell(sheet_id, positions_tab, idx, recorded_col, True, gsheet_client)
+            # Persist a user-supplied provider name back to the sheet so the
+            # row's audit trail matches what we sent to REMS.
+            if provider_prompted and 'Deck Eval Provider' in positions_df.columns:
+                update_cell(sheet_id, positions_tab, idx, 'Deck Eval Provider', provider, gsheet_client)
             click.echo(f"  OK row {idx}: {name} / {label} (session {session})")
             successes += 1
         except Exception as e:
