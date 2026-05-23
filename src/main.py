@@ -24,40 +24,70 @@ class AlreadyRecordedError(click.ClickException):
     """Raised when an existing credential for this position covers one of the meet's session dates."""
 
 
+class NoMatchingCredentialError(click.ClickException):
+    """Raised when no credential on the form matches the position. Carries the
+    full options list so callers can offer the user a manual pick."""
+
+    def __init__(self, message, options):
+        super().__init__(message)
+        self.options = options
+
+
+def _unique_credential_families(options):
+    """Return the unique credential families from form options: each option's
+    label with any trailing ' Evaluation #N' suffix stripped, deduped, ordered."""
+    seen = set()
+    out = []
+    for opt in options:
+        label = (opt.get('label') or '').strip()
+        family = re.sub(r'\s*Evaluation\s*#\d+\s*$', '', label).strip()
+        if family and family not in seen:
+            seen.add(family)
+            out.append(family)
+    return out
+
+
+def _fetch_eval_state(client, member_season_id, member_id):
+    """Fetch the data needed to resolve a deck eval credential for a member.
+    Returns (existing_credentials, form_options). Cached at the call site so
+    interactive re-resolution doesn't pay the round-trip cost twice."""
+    existing = client.get_member_credentials(
+        rems_id=None, member_id=member_id, member_season_id=member_season_id
+    )
+    options = client.get_add_credential_form_options(member_season_id, member_id)
+    return existing, options
+
+
 def _resolve_deck_eval_credential(client, member_season_id, member_id, position,
-                                   meet_session_dates=None):
+                                   meet_session_dates=None, existing=None, options=None):
     """
     Determine which credential to add next for the given position.
     Returns (credential_id, type_id, eval_number, label).
 
-    A position can only be evaluated once per meet. If meet_session_dates is provided
-    (a set/iterable of YYYY-MM-DD strings covering the meet's sessions) and an
-    existing credential of the right position prefix has start_date in that set,
-    treat as already recorded (idempotent). This matching ignores provider_identifier
-    and description so manually-entered evals with different meet names still dedup.
+    Raises `AlreadyRecordedError` if an existing eval for this position
+    falls on one of `meet_session_dates`. Raises `NoMatchingCredentialError`
+    if no form option matches (carries the available options list for
+    callers that want to offer a manual pick). Raises `click.ClickException`
+    when the form's max # for the position already exists on other dates.
 
-    Other mismatches (no slots on the form, at-max with a non-matching date) raise
-    click.ClickException.
+    `existing` and `options` may be passed in to avoid re-fetching on a
+    follow-up call (e.g. after an interactive credential-family pick).
     """
-    existing = client.get_member_credentials(
-        rems_id=None, member_id=member_id, member_season_id=member_season_id
-    )
+    if existing is None or options is None:
+        existing, options = _fetch_eval_state(client, member_season_id, member_id)
+
     existing_count = count_existing_deck_evals(existing, position)
     eval_number = existing_count + 1
     expected_label = deck_eval_credential_label(position, eval_number)
     normalized_prefix = deck_eval_credential_label(position, 1).rsplit(' #', 1)[0].lower()
 
-    options = client.get_add_credential_form_options(member_season_id, member_id)
     matching_options = [o for o in options if o['label'].strip().lower().startswith(normalized_prefix + ' #')]
-
     matching_existing = [
         c for c in existing
         if (c.get('type') or '').strip().lower() == 'deck evaluation'
         and (c.get('name') or '').strip().lower().startswith(normalized_prefix + ' ')
     ]
 
-    # Single source of truth for "is this eval already recorded?":
-    # any existing eval for this position whose start_date falls within the meet's dates.
     duplicate = find_existing_deck_eval_in_dates(existing, position, meet_session_dates)
     if duplicate is not None:
         raise AlreadyRecordedError(
@@ -77,11 +107,32 @@ def _resolve_deck_eval_credential(client, member_season_id, member_id, position,
             f"dates. Resolve in REMS before re-running."
         )
 
-    available = ", ".join(o['label'] for o in options)
-    raise click.ClickException(
-        f"No credential option matching {expected_label!r} on add-credential form. "
-        f"Available: {available}"
+    raise NoMatchingCredentialError(
+        f"No credential option matching {expected_label!r} on add-credential form.",
+        options=options,
     )
+
+
+def _prompt_for_credential_family(options, sheet_position):
+    """Show a numbered list of unique credential families and return the
+    chosen family name, or None to skip the row."""
+    families = _unique_credential_families(options)
+    click.echo(f"    Sheet position {sheet_position!r} doesn't match a known credential.")
+    click.echo("    What credential was this evaluation for?")
+    for i, fam in enumerate(families, 1):
+        click.echo(f"      {i:>2}. {fam}")
+    click.echo("       s. Skip this row")
+    choice = click.prompt("    Choose", default="s", show_default=True).strip().lower()
+    if choice in ('s', 'skip', ''):
+        return None
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < len(families):
+            return families[idx]
+    except ValueError:
+        pass
+    click.echo(f"    Invalid choice {choice!r}; skipping.")
+    return None
 
 
 @click.group()
@@ -393,10 +444,12 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
             if not member_id:
                 raise click.ClickException(f"could not resolve member_id for {name!r} (REMS {rems_id})")
 
+            cached_existing, cached_options = _fetch_eval_state(client, member_season_id, member_id)
             try:
                 credential_id, type_id, eval_number, label = _resolve_deck_eval_credential(
                     client, member_season_id, member_id, position,
                     meet_session_dates=set(session_dates.values()),
+                    existing=cached_existing, options=cached_options,
                 )
             except AlreadyRecordedError as e:
                 click.echo(f"  OK row {idx} ({name} / {position}): {e.message}")
@@ -404,6 +457,26 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
                     update_cell(sheet_id, positions_tab, idx, 'Deck Eval Recorded?', True, gsheet_client)
                 successes += 1
                 continue
+            except NoMatchingCredentialError as e:
+                if not interactive:
+                    raise
+                chosen = _prompt_for_credential_family(e.options, sheet_position=position)
+                if chosen is None:
+                    click.echo(f"  SKIP row {idx} ({name} / {position}): no credential picked")
+                    failures += 1
+                    continue
+                try:
+                    credential_id, type_id, eval_number, label = _resolve_deck_eval_credential(
+                        client, member_season_id, member_id, chosen,
+                        meet_session_dates=set(session_dates.values()),
+                        existing=cached_existing, options=cached_options,
+                    )
+                except AlreadyRecordedError as e:
+                    click.echo(f"  OK row {idx} ({name} / {chosen}): {e.message}")
+                    if not dry_run:
+                        update_cell(sheet_id, positions_tab, idx, 'Deck Eval Recorded?', True, gsheet_client)
+                    successes += 1
+                    continue
 
             if recheck:
                 # Verify-only: the row isn't in REMS. Report and move on, never POST.
