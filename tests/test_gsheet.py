@@ -1,21 +1,28 @@
-import pandas as pd
-import numpy as np
-import pytest
 from unittest.mock import MagicMock
+
+import numpy as np
+import pandas as pd
+import pytest
+
 from src.gsheet import (
-    write_df_to_sheet, read_sheet_tab, update_cell,
-    parse_meet_tab, parse_grid_session_dates, parse_officials_name_to_rems_id,
+    parse_grid_session_dates,
+    parse_meet_tab,
+    parse_officials_name_to_rems_id,
+    read_sheet_tab,
+    update_cell,
+    write_df_to_sheet,
 )
+
 
 def test_write_df_to_sheet_cleans_data():
     # Setup mock client and spreadsheet
     mock_client = MagicMock()
     mock_spreadsheet = MagicMock()
     mock_worksheet = MagicMock()
-    
+
     mock_client.open_by_key.return_value = mock_spreadsheet
     mock_spreadsheet.worksheet.return_value = mock_worksheet
-    
+
     # Create a DataFrame with NaN and an Unnamed column
     data = {
         'ColA': [1.0, np.nan, 3.0],
@@ -23,9 +30,9 @@ def test_write_df_to_sheet_cleans_data():
         'Unnamed: 103': [4, 5, 6]
     }
     df = pd.DataFrame(data)
-    
+
     write_df_to_sheet(df, 'fake-id', 'fake-sheet', mock_client)
-    
+
     # Verify worksheet.update was called with cleaned data
     # It should have:
     # 1. Dropped 'Unnamed: 103'
@@ -36,11 +43,11 @@ def test_write_df_to_sheet_cleans_data():
         ['', 'bar'],
         [3.0, '']
     ]
-    
+
     # Get the actual call arguments
     args, kwargs = mock_worksheet.update.call_args
     actual_data = args[0]
-    
+
     assert actual_data == expected_data
     mock_worksheet.clear.assert_called_once()
 
@@ -219,9 +226,8 @@ def test_ensure_columns_after_noop_when_present():
 
 def test_read_sheet_tab_missing_worksheet_raises_clickexception():
     """Missing tab should raise a ClickException with a clear message, not gspread's WorksheetNotFound."""
-    import gspread.exceptions
     import click
-    mock_worksheet = MagicMock()
+    import gspread.exceptions
     mock_client = MagicMock()
     mock_spreadsheet = MagicMock()
     mock_client.open_by_key.return_value = mock_spreadsheet

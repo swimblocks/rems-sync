@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["terraform", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]  # pycodestyle errors, pyflakes, isort, warnings
+ignore = [
+    "E501",  # line-too-long: many existing strings (URLs, prompts) are long on purpose
+]

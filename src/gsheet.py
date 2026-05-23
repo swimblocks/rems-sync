@@ -1,10 +1,12 @@
-import gspread
-import click
-import google.auth
-import pandas as pd
 import re
 from datetime import datetime
+
+import click
+import google.auth
+import gspread
+import pandas as pd
 from gspread.utils import rowcol_to_a1
+
 
 def get_gspread_client():
     """
@@ -120,7 +122,7 @@ def write_df_to_sheet(df, sheet_id, sheet_name, client):
         worksheet = spreadsheet.worksheet(sheet_name)
     except gspread.WorksheetNotFound:
         worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="20")
-    
+
     worksheet.clear()
     # Replace NaN with empty string to avoid JSON compliance issues
     df_filled = df.fillna('')
