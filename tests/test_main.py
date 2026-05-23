@@ -216,7 +216,7 @@ def test_add_deck_eval_happy_path(mock_mfa, mock_client_class, runner):
         type_id='127',
         provider='Kaoru Yajima',
         provider_identifier='Cunningham Classic 2026',
-        start_date='04/12/2026',
+        start_date='12/04/2026',  # d/m/Y per REMS form convention
         description='Session 6',
     )
 
