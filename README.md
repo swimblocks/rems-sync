@@ -5,6 +5,13 @@
 
 Python CLI that syncs data between Swimming Canada's **REMS / SportLomo** officials registry and Google Sheets. Pulls members, member details, and credentials out of REMS for reporting; pushes deck evaluations from a meet's roster sheet back into REMS.
 
+## Prerequisites
+
+- **Python 3.12+**
+- **Google Cloud CLI** (`gcloud`) — needed for the Application Default Credentials login, _not_ for any GCP project. Install via [cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install); platform shortcuts: [Windows](https://cloud.google.com/sdk/docs/install#windows) · [macOS](https://cloud.google.com/sdk/docs/install#mac) · [Linux](https://cloud.google.com/sdk/docs/install#linux).
+- A **REMS / SportLomo officials-portal login** with permission to manage your club's officials.
+- **Editor access** to the target Google Sheet (whoever owns the sheet shares it with the Google account you'll log into below).
+
 ## Quick start
 
 ```bash
@@ -13,10 +20,10 @@ cd rems-sync
 python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# One-time Google auth (uses your own account — no GCP project required):
+# One-time Google auth — uses your own account, no GCP project required:
 gcloud auth application-default login
 
-# Share the target Google Sheet with your own Google account, then:
+# Smoke-test the REMS login (warms the cookie cache so later commands skip MFA):
 python -m src.main login --username <user> --password <pw>
 ```
 
