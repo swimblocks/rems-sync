@@ -389,26 +389,43 @@ def test_upload_deck_evals_interactive_quit_aborts_batch(mock_mfa, mock_client_c
 @patch('src.main.get_gspread_client')
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
-def test_upload_deck_evals_recheck_includes_already_recorded(mock_mfa, mock_client_class, mock_get_gs,
-                                                              mock_read_tab, mock_read_rows, mock_update_cell, runner):
-    """With --recheck, rows already marked Deck Eval Recorded? = TRUE are also processed."""
-    _patch_sheet_reads(mock_read_tab, mock_read_rows)
-    # The default positions fixture has 1 row with Recorded=TRUE and 1 with Recorded='' (pending).
-    # --recheck should include both since both have Success?=TRUE.
+def test_upload_deck_evals_recheck_verify_only(mock_mfa, mock_client_class, mock_get_gs,
+                                               mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """--recheck never POSTs. Already-recorded rows tick the cell, missing rows are reported."""
+    positions = pd.DataFrame([
+        # Row 0: not in REMS yet -> MISSING in recheck mode
+        {'Official Name': 'A B', 'Official Position': 'Inspector of Turns',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P1',
+         'Deck Eval Recorded?': '', 'Session': '6'},
+        # Row 1: already in REMS -> OK in recheck mode
+        {'Official Name': 'C D', 'Official Position': 'Starter',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P2',
+         'Deck Eval Recorded?': 'TRUE', 'Session': '6'},
+    ])
+    _patch_sheet_reads(mock_read_tab, mock_read_rows, positions_df=positions)
 
     mock_client = MagicMock()
     mock_client_class.return_value = mock_client
     mock_client.get_member_season_id.return_value = "685100"
     mock_client.get_member_details.return_value = {
-        'rems_id': 'SC24176410', 'member_id': '178722',
+        'rems_id': 'SC11112222', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
-    mock_client.get_member_credentials.return_value = []
+    # REMS only has the Starter eval (for 'C D'); not the Inspector of Turns.
+    mock_client.get_member_credentials.side_effect = lambda **kwargs: {
+        '178722': [
+            {'type': 'Deck Evaluation', 'name': 'Starter Evaluation #1',
+             'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/456'},
+        ],
+    }.get(str(kwargs['member_id']), [])
     mock_client.get_add_credential_form_options.return_value = [
         {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
         {'label': 'Starter Evaluation #1', 'credential_id': '456', 'type_id': '127'},
     ]
-    mock_client.add_member_credential.return_value = True
+    mock_client.get_member_credential_details.side_effect = lambda msid, mid, cid: {
+        '456': {'name': 'Starter Evaluation #1',
+                'provider_identifier': 'Cunningham Classic 2026', 'description': 'Session 6'},
+    }[str(cid)]
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
@@ -420,8 +437,49 @@ def test_upload_deck_evals_recheck_includes_already_recorded(mock_mfa, mock_clie
 
     assert result.exit_code == 0, result.output
     assert 'Recheck mode' in result.output
-    # Default fixture has 2 Success?=TRUE rows (the third has FALSE)
-    assert 'Found 2 pending deck eval' in result.output
+    assert 'Found 2 row(s) to verify' in result.output
+    assert 'MISSING row 0' in result.output
+    assert 'OK row 1' in result.output
+    assert 'already recorded' in result.output.lower()
+    # Crucially: never POST in recheck mode.
+    mock_client.add_member_credential.assert_not_called()
+
+
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_recheck_does_not_prompt_for_missing(mock_mfa, mock_client_class, mock_get_gs,
+                                                                mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """--recheck + --interactive: missing rows are reported but NEVER prompt."""
+    _patch_sheet_reads(mock_read_tab, mock_read_rows)
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = []  # nothing in REMS
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+        {'label': 'Starter Evaluation #1', 'credential_id': '456', 'type_id': '127'},
+    ]
+
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--sheet-id', 'fake-id',
+        '--recheck', '--interactive',
+    ], input='')
+
+    assert result.exit_code == 0, result.output
+    assert 'Submit?' not in result.output
+    assert 'MISSING' in result.output
+    mock_client.add_member_credential.assert_not_called()
 
 
 @patch('src.main.read_sheet_rows')
