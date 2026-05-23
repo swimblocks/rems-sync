@@ -109,23 +109,30 @@ def count_existing_deck_evals(credentials, position):
             count += 1
     return count
 
-def to_mmddyyyy(value):
+def to_rems_date_format(value):
     """
-    Convert a date input to the MM/DD/YYYY format used by REMS forms.
+    Convert a date input to the d/m/Y format REMS forms expect (and the same
+    format flatpickr renders in the UI). Returns DD/MM/YYYY.
 
     Accepts:
       - datetime.date / datetime.datetime
       - ISO strings YYYY-MM-DD
-      - Already-formatted MM/DD/YYYY (returned as-is)
+      - Already-formatted DD/MM/YYYY (returned as-is; ambiguous numbers like
+        04/11/2025 are treated as d/m/Y per the REMS convention)
+
+    Note: previous releases of this tool sent dates as MM/DD/YYYY; REMS
+    silently misinterpreted those as d/m/Y, recording (e.g.) 04/11/2025
+    as 4 November rather than 11 April. Any credentials added before the fix
+    need their start_date corrected in REMS.
     """
     if isinstance(value, (date, datetime)):
-        return value.strftime("%m/%d/%Y")
+        return value.strftime("%d/%m/%Y")
     s = str(value).strip()
     if re.match(r'^\d{2}/\d{2}/\d{4}$', s):
         return s
     if re.match(r'^\d{4}-\d{2}-\d{2}$', s):
-        return datetime.strptime(s, "%Y-%m-%d").strftime("%m/%d/%Y")
-    raise ValueError(f"Unsupported date format: {value!r} (use YYYY-MM-DD or MM/DD/YYYY)")
+        return datetime.strptime(s, "%Y-%m-%d").strftime("%d/%m/%Y")
+    raise ValueError(f"Unsupported date format: {value!r} (use YYYY-MM-DD or DD/MM/YYYY)")
 
 
 def default_meet_dates_for(eval_iso_date):

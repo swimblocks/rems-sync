@@ -14,7 +14,7 @@ from .utils import (
     deck_eval_credential_label,
     count_existing_deck_evals,
     find_existing_deck_eval_in_dates,
-    to_mmddyyyy,
+    to_rems_date_format,
     parse_rems_date_to_iso,
     default_meet_dates_for,
 )
@@ -429,7 +429,7 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
             continue
 
         try:
-            start_date = to_mmddyyyy(date_raw)
+            start_date = to_rems_date_format(date_raw)
             description = f"Session {session}" if not session.lower().startswith('session') else session
 
             rems_id = name_to_rems_id.get(name)
@@ -553,7 +553,7 @@ def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_
 def add_deck_eval(username, password, season, official_name, rems_id, position, provider, meet, eval_date, description, meet_dates, dry_run):
     """Add a single deck evaluation for one named official."""
     season_id = parse_season_to_id(season)
-    start_date = to_mmddyyyy(eval_date)
+    start_date = to_rems_date_format(eval_date)
 
     client = REMSClient(username, password, get_mfa_code)
     client.login()
