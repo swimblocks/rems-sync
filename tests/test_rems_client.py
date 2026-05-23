@@ -270,6 +270,114 @@ def test_login_keeps_only_mfa_cookies_before_post(tmp_path):
     assert "PHPSESSID" not in captured_cookies
 
 
+@pytest.fixture(autouse=True)
+def _no_retry_sleep(monkeypatch):
+    """urllib3.Retry sleeps between attempts via time.sleep; stub it out for tests."""
+    import urllib3.util.retry
+    monkeypatch.setattr(urllib3.util.retry.time, "sleep", lambda _: None)
+
+
+@responses.activate
+def test_request_retries_transient_5xx(tmp_path):
+    """A 502 from REMS is retried; the eventual 200 is returned to the caller."""
+    cache = tmp_path / "cookies.json"
+    cache.write_text(json.dumps({"sess": "ok"}))
+    client = REMSClient("u", "p", lambda: "123456", cookie_cache_path=cache)
+    # Probe succeeds; cache login path
+    responses.add(
+        responses.POST,
+        f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
+        status=200,
+    )
+    assert client.login() is True
+
+    target_url = f"{client.BASE_URL}/sportlomo/user/membership-management/member-detail/789"
+    # First two attempts: 502. Third: 200.
+    responses.add(responses.GET, target_url, status=502)
+    responses.add(responses.GET, target_url, status=502)
+    responses.add(
+        responses.GET, target_url,
+        body='<a class="smr-button" href="/sportlomo/user/credentials/member-credentials-details/789/456">View</a>'
+             '<input id="member-member-identifiers-0-member-identifier" value="SC123" />',
+        status=200,
+    )
+    details = client.get_member_details(789, 232)
+    assert details['member_id'] == '456'
+
+
+@responses.activate
+def test_request_retries_429_with_retry_after(tmp_path):
+    """429 Too Many Requests is retried — urllib3 honors Retry-After itself."""
+    cache = tmp_path / "cookies.json"
+    cache.write_text(json.dumps({"sess": "ok"}))
+    client = REMSClient("u", "p", lambda: "111111", cookie_cache_path=cache)
+    responses.add(
+        responses.POST,
+        f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
+        status=200,
+    )
+    assert client.login() is True
+
+    target_url = f"{client.BASE_URL}/sportlomo/user/membership-management/member-detail/789"
+    responses.add(responses.GET, target_url, status=429, headers={"Retry-After": "5"})
+    responses.add(
+        responses.GET, target_url,
+        body='<a class="smr-button" href="/sportlomo/user/credentials/member-credentials-details/789/456">x</a>'
+             '<input id="member-member-identifiers-0-member-identifier" value="SC1" />',
+        status=200,
+    )
+    details = client.get_member_details(789, 232)
+    assert details['member_id'] == '456'
+
+
+@responses.activate
+def test_request_retries_500_408_etc(tmp_path):
+    """Confirm other retriable codes (not just 502) trigger retry."""
+    cache = tmp_path / "cookies.json"
+    cache.write_text(json.dumps({"sess": "ok"}))
+    client = REMSClient("u", "p", lambda: "111111", cookie_cache_path=cache)
+    responses.add(
+        responses.POST,
+        f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
+        status=200,
+    )
+    assert client.login() is True
+
+    target_url = f"{client.BASE_URL}/sportlomo/user/membership-management/member-detail/789"
+    responses.add(responses.GET, target_url, status=500)
+    responses.add(responses.GET, target_url, status=408)
+    responses.add(
+        responses.GET, target_url,
+        body='<a class="smr-button" href="/sportlomo/user/credentials/member-credentials-details/789/456">x</a>'
+             '<input id="member-member-identifiers-0-member-identifier" value="SC1" />',
+        status=200,
+    )
+    details = client.get_member_details(789, 232)
+    assert details['member_id'] == '456'
+
+
+@responses.activate
+def test_request_5xx_retry_exhausts_returns_last(tmp_path):
+    """If 502s persist past the retry budget, the final response is returned
+    (so the caller's existing error path can surface it)."""
+    cache = tmp_path / "cookies.json"
+    cache.write_text(json.dumps({"sess": "ok"}))
+    client = REMSClient("u", "p", lambda: "123456", cookie_cache_path=cache)
+    responses.add(
+        responses.POST,
+        f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
+        status=200,
+    )
+    assert client.login() is True
+
+    target_url = f"{client.BASE_URL}/sportlomo/user/membership-management/member-detail/789"
+    # Persistent 502s — urllib3 Retry exhausts after `total=4` retries.
+    for _ in range(6):
+        responses.add(responses.GET, target_url, status=502)
+    with pytest.raises(Exception, match="502"):
+        client.get_member_details(789, 232)
+
+
 @responses.activate
 def test_request_auto_reauth_on_403(tmp_path):
     """A 403 mid-call triggers a full MFA re-login and retries the original request."""
