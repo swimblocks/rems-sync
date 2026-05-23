@@ -95,14 +95,15 @@ def test_count_existing_deck_evals():
     # Position name from the sheet is normalized before matching
     assert count_existing_deck_evals(credentials, "Chief Timer") == 1
 
-def test_to_mmddyyyy():
-    from src.utils import to_mmddyyyy
+def test_to_rems_date_format():
+    from src.utils import to_rems_date_format
     from datetime import date
-    assert to_mmddyyyy("2026-04-12") == "04/12/2026"
-    assert to_mmddyyyy("04/12/2026") == "04/12/2026"
-    assert to_mmddyyyy(date(2026, 4, 12)) == "04/12/2026"
+    # REMS expects d/m/Y (matches the flatpickr display config); 12 April 2026 -> 12/04/2026.
+    assert to_rems_date_format("2026-04-12") == "12/04/2026"
+    assert to_rems_date_format("12/04/2026") == "12/04/2026"
+    assert to_rems_date_format(date(2026, 4, 12)) == "12/04/2026"
     with pytest.raises(ValueError, match="Unsupported date format"):
-        to_mmddyyyy("12-Apr-2026")
+        to_rems_date_format("12-Apr-2026")
 
 
 def test_default_meet_dates_for():

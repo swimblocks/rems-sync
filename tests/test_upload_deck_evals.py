@@ -114,7 +114,7 @@ def test_upload_deck_evals_happy_path(mock_mfa, mock_client_class, mock_get_gs,
     assert kwargs['credential_id'] == '452'
     assert kwargs['provider'] == 'Kaoru Yajima'
     assert kwargs['provider_identifier'] == 'Cunningham Classic 2026'
-    assert kwargs['start_date'] == '04/12/2026'
+    assert kwargs['start_date'] == '12/04/2026'  # d/m/Y per REMS form convention
     assert kwargs['description'] == 'Session 6'
 
     mock_update_cell.assert_called_once_with(
