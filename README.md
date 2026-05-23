@@ -9,6 +9,7 @@ This project is a Python-based CLI tool to synchronize data from the Swimming Ca
 - Refresh REMS member details, outputting to CSV or Google Sheet.
 - Refresh REMS member credentials, outputting to CSV or Google Sheet.
 - Upload members, details, or credentials from CSV to a Google Sheet
+- Upload deck evaluations to REMS, either one at a time or in bulk from a meet's positions sheet
 
 ## Installation
 
@@ -188,3 +189,102 @@ python -m src.main upload-member-credentials --input-file rems_member_credential
 ```
 
 Unless `--sheet-name` is specified, the credentials will overwrite the contents of the sheet tab named "REMS Member Credentials".
+
+### Deck evaluation upload
+
+Two commands write deck evaluations to REMS: `add-deck-eval` for a single record, and `upload-deck-evals` for a meet-wide batch read from a Google Sheet. Both use the same underlying flow: resolve the official, work out whether this is their #1 or #2 evaluation for the position, check that the same meet/session isn't already recorded, then POST the credential.
+
+#### Authentication and the cookie cache
+
+The first authenticated command of a session triggers an MFA login. Cookies are cached to `~/.rems-sync/cookies.json` so subsequent runs reuse the session without prompting. When the cached session has lapsed, the tool retries with a "known device" login (using the `mfa_*` cookies REMS sets after MFA), which REMS honors by skipping the OTP. You'll only be prompted for an MFA code if REMS actually demands one (e.g. on a new device or after a full logout). A mid-batch 403 (Authentication-JWT expired during a long interactive session) triggers an automatic re-login and retry.
+
+Run `python -m src.main login` to do nothing but log in (useful to warm the cache before a long batch).
+
+#### `add-deck-eval` — single evaluation
+
+Adds one deck evaluation for one official, no spreadsheet required. The tool counts existing evaluations for the position in REMS to pick #1 vs #2, then verifies that the same meet + session isn't already recorded before POSTing.
+
+```bash
+python -m src.main add-deck-eval \
+  --username <user> --password <pw> \
+  --season 2025-2026 \
+  --official-name "Chris Fletcher" \
+  --rems-id SC24176410 \
+  --position "Chief Timer" \
+  --provider "Kaoru Yajima" \
+  --meet "Cunningham Classic 2026" \
+  --date 2026-04-12 \
+  --description "Session 6" \
+  [--dry-run]
+```
+
+- `--rems-id` (optional but recommended): look up by REMS ID instead of name search. Avoids the "Janpreet" / single-name ambiguity.
+- `--dry-run`: do every read (login, member lookup, existing credentials, form options) but skip the POST.
+
+If the same meet + session is already recorded, the tool reports "already recorded" and exits 0 (idempotent). If the official is at the form's maximum (#1 and #2 both exist) but for different meets/sessions, the tool refuses with a clear message instructing you to resolve it in REMS.
+
+#### `upload-deck-evals` — batch from a Google Sheet
+
+Reads a meet's Google Sheet, uploads every pending deck evaluation to REMS, and writes `TRUE` back to the **Deck Eval Recorded?** column of each successful row.
+
+```bash
+python -m src.main upload-deck-evals \
+  --username <user> --password <pw> \
+  --season 2025-2026 \
+  --sheet-id <google_sheet_id> \
+  [--positions-tab Positions] \
+  [--grid-tab Grid] \
+  [--meet-tab Meet] \
+  [--officials-tab Officials] \
+  [--session-col Session] \
+  [--meet-name "Override"] \
+  [--interactive] \
+  [--recheck] \
+  [--dry-run]
+```
+
+Flags:
+- `--interactive`: prompt `y/n/q` before POSTing each row. Default if you just press Enter is `n` (skip). `q` aborts the rest of the batch.
+- `--recheck`: also process rows already marked `Deck Eval Recorded? = TRUE`. Use to verify that REMS actually has each eval; combined with `--interactive`, only rows missing from REMS will prompt.
+- `--dry-run`: run all reads (including the per-row REMS lookups) but skip the POST and the sheet write-back.
+
+Expected sheet structure:
+
+- **Positions tab** (default `Positions`) — one row per official per session. Required columns: `Official Name`, `Official Position`, `Deck Eval Success?`, `Deck Eval Provider`, `Deck Eval Recorded?`, and the session-identifier column (default `Session`).
+- **Grid tab** (default `Grid`) — 2D layout. Each session is a column header containing multi-line text such as `"Session 1\nFriday, Apr 10\nSenior Briefing: 3:55 pm\n..."`. The tool extracts the session number and date from this header. The year is taken from the Meet tab's `Meet Start Date`, falling back to the `--season` end year.
+- **Meet tab** (default `Meet`) — key/value layout (column A label, column B value). The tool reads `Meet Name` (or `Name`) and `Meet Start Date`. Override the meet name with `--meet-name` to skip this lookup.
+- **Officials tab** (default `Officials`) — name → REMS ID lookup. The tool finds the header row by looking for `Name` and `REMS ID` cells and builds the map from subsequent rows. Used to translate Positions-tab names into REMS IDs, which is more reliable than name-based REMS search.
+
+##### Position name normalization
+
+The Positions tab uses friendly names that don't always match REMS credential names. The tool applies a known-mismatch map before lookup:
+
+| Positions tab | REMS credential prefix |
+|---|---|
+| Chief Timer | Chief Timekeeper |
+| Admin Desk | Administration Desk |
+| Stroke Judge | Judge of Stroke |
+| Session Referee | Referee |
+| Timer | Introduction to Swimming Officiating |
+
+Other positions are used verbatim. Add new mappings in [src/utils.py](src/utils.py) (`_POSITION_TO_CREDENTIAL_PREFIX`) when you encounter a new mismatch.
+
+##### Pending-row filter
+
+A row is considered "pending" when both:
+- `Deck Eval Success?` is `TRUE` / `YES` / `1` (case- and whitespace-insensitive), AND
+- `Deck Eval Recorded?` is empty or `FALSE`.
+
+`--recheck` removes the second condition.
+
+##### Per-row outcomes
+
+For each pending row:
+
+1. The official's name is looked up in the Officials tab to get a REMS ID.
+2. The REMS ID is resolved to `member_season_id` and `member_id` via REMS.
+3. Existing deck evaluations for the position are inspected to decide eval #1 vs #2.
+4. The same meet + session is checked against existing evaluation details; if already recorded, the row is treated as a success (cell ticked).
+5. Otherwise the new credential is POSTed and the cell ticked on a 302 success.
+
+Failures on individual rows are reported but do not abort the batch (unless you pick `q` in interactive mode).
