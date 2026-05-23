@@ -1,4 +1,5 @@
 import re
+from datetime import date, datetime
 import click
 
 def parse_season_to_id(season_str):
@@ -38,3 +39,65 @@ def validate_rems_id(rems_id):
     if not rems_id:
         return False
     return bool(re.match(r'^SC\d{8,}$', str(rems_id)))
+
+_POSITION_TO_CREDENTIAL_PREFIX = {
+    "Chief Timer": "Chief Timekeeper",
+    "Admin Desk": "Administration Desk",
+    "Stroke Judge": "Judge of Stroke",
+    "Session Referee": "Referee",
+    "Timer": "Introduction to Swimming Officiating",
+}
+
+
+def normalize_position_for_credential(position):
+    """
+    Translate a Positions-tab role label into the prefix used in REMS credential
+    names (e.g. 'Chief Timer' -> 'Chief Timekeeper'). Returns the input unchanged
+    if no special mapping is needed.
+    """
+    return _POSITION_TO_CREDENTIAL_PREFIX.get(position.strip(), position.strip())
+
+
+def deck_eval_credential_label(position, eval_number):
+    """Build the credential label expected on the add-credential form for a deck eval."""
+    prefix = normalize_position_for_credential(position)
+    return f"{prefix} Evaluation #{eval_number}"
+
+def count_existing_deck_evals(credentials, position):
+    """
+    Count how many existing 'Deck Evaluation' credentials this member has for the given position.
+    Used to determine whether the next eval is #1 or #2 (or beyond). Applies position
+    name normalization (e.g. 'Chief Timer' -> 'Chief Timekeeper').
+
+    Args:
+        credentials: list of dicts as returned by REMSClient.get_member_credentials
+        position: the official position string from the Positions tab
+    """
+    prefix = normalize_position_for_credential(position).lower()
+    count = 0
+    for cred in credentials:
+        cred_type = (cred.get('type') or '').strip().lower()
+        cred_name = (cred.get('name') or '').strip().lower()
+        if cred_type != 'deck evaluation':
+            continue
+        if cred_name.startswith(prefix + ' '):
+            count += 1
+    return count
+
+def to_mmddyyyy(value):
+    """
+    Convert a date input to the MM/DD/YYYY format used by REMS forms.
+
+    Accepts:
+      - datetime.date / datetime.datetime
+      - ISO strings YYYY-MM-DD
+      - Already-formatted MM/DD/YYYY (returned as-is)
+    """
+    if isinstance(value, (date, datetime)):
+        return value.strftime("%m/%d/%Y")
+    s = str(value).strip()
+    if re.match(r'^\d{2}/\d{2}/\d{4}$', s):
+        return s
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', s):
+        return datetime.strptime(s, "%Y-%m-%d").strftime("%m/%d/%Y")
+    raise ValueError(f"Unsupported date format: {value!r} (use YYYY-MM-DD or MM/DD/YYYY)")
