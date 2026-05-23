@@ -419,6 +419,60 @@ class REMSClient:
             'provider_identifier': _val('provider-identifier'),
         }
 
+    def update_member_credential(self, member_season_id, member_id, credential_id, field_overrides):
+        """Edit an existing member credential.
+
+        GETs the view-from-member-profile page, scrapes ALL form fields
+        (inputs, selects, textareas — including hidden CSRF tokens), applies
+        `field_overrides` (e.g. {"start_date": "11/04/2025"}), and POSTs the
+        same URL. Sending the full form back preserves fields we don't intend
+        to change.
+
+        Success is a 302 redirect (Yii post-save behavior).
+        """
+        url = (f"{self.BASE_URL}/sportlomo/user/credentials/"
+               f"view-from-member-profile/{member_season_id}/{member_id}/{credential_id}")
+        response = self._request('GET', url)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'lxml')
+
+        form = soup.find('form')
+        if form is None:
+            raise Exception(f"Could not find edit form at {url}")
+
+        payload = []
+        for inp in form.find_all('input'):
+            name = inp.get('name')
+            if not name or inp.get('type') == 'file':
+                continue
+            payload.append((name, inp.get('value', '') or ''))
+        for sel in form.find_all('select'):
+            name = sel.get('name')
+            if not name:
+                continue
+            selected = sel.find('option', selected=True)
+            payload.append((name, (selected.get('value') if selected else '') or ''))
+        for ta in form.find_all('textarea'):
+            name = ta.get('name')
+            if name:
+                payload.append((name, ta.get_text() or ''))
+
+        # Apply overrides — replace existing entries by name, append any new ones.
+        override_names = set(field_overrides.keys())
+        payload = [(n, v) for (n, v) in payload if n not in override_names]
+        payload.extend(field_overrides.items())
+
+        response = self._request(
+            'POST', url, data=payload,
+            headers={"Referer": url},
+            allow_redirects=False,
+        )
+        if response.status_code != 302:
+            raise Exception(
+                f"update_member_credential failed: expected 302, got {response.status_code}"
+            )
+        return True
+
     def get_add_credential_form_options(self, member_season_id, member_id, type_label="Deck Evaluation"):
         """
         Return credential options available for the given credential type.

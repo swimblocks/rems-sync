@@ -487,6 +487,102 @@ def test_upload_deck_evals_recheck_detects_swapped_dates(mock_mfa, mock_client_c
 @patch('src.main.get_gspread_client')
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
+def test_upload_deck_evals_recheck_interactive_fixes_swapped(mock_mfa, mock_client_class, mock_get_gs,
+                                                              mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """In --recheck --interactive, the user can opt to fix a SWAPPED date in REMS."""
+    positions = pd.DataFrame([
+        {'Official Name': 'A B', 'Official Position': 'Inspector of Turns', 'Official Club': 'ROW',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P1',
+         'Deck Eval Recorded?': 'TRUE', 'Session': '6'},
+    ])
+    _patch_sheet_reads(mock_read_tab, mock_read_rows, positions_df=positions)
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC11112222', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    # Session 6 is Apr 12, 2026 — swap is 04/12/2026 (Dec 4). The existing cred
+    # carries the swap as its start_date and an actions URL pointing to itself.
+    mock_client.get_member_credentials.return_value = [
+        {'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #1',
+         'start_date': '04/12/2026',
+         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/442'},
+    ]
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+    ]
+    mock_client.update_member_credential.return_value = True
+
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--sheet-id', 'fake-id',
+        '--recheck', '--interactive',
+    ], input='y\n')
+
+    assert result.exit_code == 0, result.output
+    assert 'SWAPPED row 0' in result.output
+    assert 'Fix start_date to 12/04/2026?' in result.output
+    assert 'start_date updated to 12/04/2026' in result.output
+    mock_client.update_member_credential.assert_called_once_with(
+        '685100', '178722', '442',
+        field_overrides={'start_date': '12/04/2026'},
+    )
+
+
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_recheck_interactive_skip_swapped(mock_mfa, mock_client_class, mock_get_gs,
+                                                              mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """In --recheck --interactive, declining the fix leaves the eval unchanged."""
+    positions = pd.DataFrame([
+        {'Official Name': 'A B', 'Official Position': 'Inspector of Turns', 'Official Club': 'ROW',
+         'Deck Eval Success?': 'TRUE', 'Deck Eval Provider': 'P1',
+         'Deck Eval Recorded?': 'TRUE', 'Session': '6'},
+    ])
+    _patch_sheet_reads(mock_read_tab, mock_read_rows, positions_df=positions)
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC11112222', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = [
+        {'type': 'Deck Evaluation', 'name': 'Inspector of Turns Evaluation #1',
+         'start_date': '04/12/2026',
+         'actions': '/sportlomo/user/credentials/view-from-member-profile/685100/178722/442'},
+    ]
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+    ]
+
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        '--sheet-id', 'fake-id',
+        '--recheck', '--interactive',
+    ], input='n\n')
+
+    assert result.exit_code == 0, result.output
+    assert 'Leaving as-is' in result.output
+    mock_client.update_member_credential.assert_not_called()
+
+
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
 def test_upload_deck_evals_recheck_does_not_prompt_for_missing(mock_mfa, mock_client_class, mock_get_gs,
                                                                 mock_read_tab, mock_read_rows, mock_update_cell, runner):
     """--recheck + --interactive: missing rows are reported but NEVER prompt."""
