@@ -4,10 +4,84 @@ import pandas as pd
 from io import StringIO
 from .rems_client import REMSClient, get_mfa_code
 from .gsheet import (
-    get_gspread_client, write_df_to_sheet, read_sheet_tab, read_sheet_rows,
+    get_gspread_client, get_drive_session, get_credentials_identity,
+    write_df_to_sheet, read_sheet_tab, read_sheet_rows,
     parse_meet_tab, parse_grid_session_dates, parse_officials_name_to_rems_id,
-    update_cell,
+    list_drive_subfolders, find_drive_sheet_in_folder, update_cell,
 )
+
+
+# Root Drive folder under which seasons -> meets -> sheets are organised.
+# (Specific to the Rowing-Hamilton officials Drive layout.)
+ROW_OFFICIALS_ROOT_FOLDER_ID = "0AFczXKtVbxcaUk9PVA"
+DEFAULT_ROSTER_SHEET_NAME_SUBSTRING = "Officials Roster"
+
+
+def _discover_meet_sheet_id(season, root_folder_id, roster_substring):
+    """Find the sheet for a meet via the Drive folder hierarchy:
+    `root_folder_id/<season>/<meet>/<...Officials Roster sheet>`. Prompts the
+    user to pick a meet when multiple are found. Returns the picked sheet id,
+    or raises ClickException."""
+    drive = get_drive_session()
+
+    # Shared-drive IDs start with "0A" (e.g. 0AFczXKtVbxcaUk9PVA). When the
+    # configured root is a shared drive we have to scope queries to that drive.
+    drive_id = root_folder_id if root_folder_id.startswith("0A") else None
+
+    season_folders = list_drive_subfolders(drive, root_folder_id, drive_id=drive_id)
+    if not season_folders:
+        identity = get_credentials_identity() or "(unknown identity — try `gcloud auth list`)"
+        raise click.ClickException(
+            f"Drive folder {root_folder_id} has 0 visible sub-folders. The account in use "
+            f"({identity}) probably doesn't have access to that shared drive. Open the drive "
+            f"in your browser, choose 'Manage members', and add the account above as a Viewer."
+        )
+    season_key = season.strip().casefold()
+    season_matches = [f for f in season_folders if season_key in (f.get('name') or '').casefold()]
+    if not season_matches:
+        names = ", ".join(f.get('name', '?') for f in season_folders)
+        raise click.ClickException(
+            f"No season folder matching {season!r} under root folder {root_folder_id}. "
+            f"Visible season folders: {names}"
+        )
+    if len(season_matches) > 1:
+        names = ", ".join(f.get('name', '?') for f in season_matches)
+        raise click.ClickException(
+            f"Multiple season folders match {season!r}: {names}. Be more specific via --season."
+        )
+    season_folder = season_matches[0]
+    click.echo(f"Season folder: {season_folder.get('name')} ({season_folder['id']})")
+
+    meet_folders = list_drive_subfolders(drive, season_folder['id'], drive_id=drive_id)
+    meets_with_roster = []
+    for meet in meet_folders:
+        sheet = find_drive_sheet_in_folder(drive, meet['id'], roster_substring, drive_id=drive_id)
+        if sheet:
+            meets_with_roster.append((meet, sheet))
+
+    if not meets_with_roster:
+        raise click.ClickException(
+            f"No meet folders under {season_folder.get('name')!r} contain a sheet matching "
+            f"{roster_substring!r}."
+        )
+
+    meets_with_roster.sort(key=lambda ms: (ms[0].get('name') or '').casefold())
+    click.echo(f"Meets found in {season_folder.get('name')}:")
+    for i, (meet, sheet) in enumerate(meets_with_roster, 1):
+        click.echo(f"  {i:>2}. {meet.get('name')}   ({sheet.get('name')})")
+    choice = click.prompt(
+        f"Pick a meet [1-{len(meets_with_roster)}]",
+        default="1", show_default=True,
+    ).strip()
+    try:
+        idx = int(choice) - 1
+    except ValueError:
+        raise click.ClickException(f"Not a number: {choice!r}")
+    if not (0 <= idx < len(meets_with_roster)):
+        raise click.ClickException(f"Out of range: {choice!r}")
+    chosen_meet, chosen_sheet = meets_with_roster[idx]
+    click.echo(f"Using meet {chosen_meet.get('name')!r} sheet {chosen_sheet.get('name')!r} ({chosen_sheet['id']})")
+    return chosen_sheet['id']
 from .utils import (
     parse_season_to_id,
     validate_rems_id,
@@ -431,7 +505,16 @@ def upload_member_credentials(input_file, sheet_id, sheet_name):
 @click.option('--username', envvar='REMS_USERNAME', help='The REMS username.', required=True)
 @click.option('--password', envvar='REMS_PASSWORD', help='The REMS password.', hide_input=True, required=True)
 @click.option('--season', required=True, help='The season (e.g. "2025-2026").')
-@click.option('--sheet-id', required=True, help='The Google Sheet ID with Positions, Grid, and Meet tabs.')
+@click.option('--sheet-id', default=None,
+              help='The Google Sheet ID with Positions, Grid, and Meet tabs. '
+                   'When omitted, the tool searches the configured season folder in Drive '
+                   'and prompts you to pick a meet.')
+@click.option('--season-folder-id', default=ROW_OFFICIALS_ROOT_FOLDER_ID,
+              help='Root Drive folder ID under which season subfolders live. '
+                   'Used only when --sheet-id is not provided.')
+@click.option('--roster-name-substring', default=DEFAULT_ROSTER_SHEET_NAME_SUBSTRING,
+              help='Substring used to identify the roster sheet inside a meet folder. '
+                   'Used only when --sheet-id is not provided.')
 @click.option('--positions-tab', default='Positions', help='Name of the positions tab.')
 @click.option('--grid-tab', default='Grid', help='Name of the grid tab (session -> date).')
 @click.option('--meet-tab', default='Meet', help='Name of the meet tab (key/value meet metadata).')
@@ -443,10 +526,13 @@ def upload_member_credentials(input_file, sheet_id, sheet_name):
 @click.option('--interactive', is_flag=True, help='Prompt y/n/q before POSTing each evaluation.')
 @click.option('--recheck', is_flag=True, help='Verify-only pass: include rows already marked Deck Eval Recorded? = TRUE, '
                                               'confirm against REMS, but never POST. Missing rows are reported.')
-def upload_deck_evals(username, password, season, sheet_id, positions_tab, grid_tab, meet_tab,
+def upload_deck_evals(username, password, season, sheet_id, season_folder_id, roster_name_substring,
+                     positions_tab, grid_tab, meet_tab,
                      officials_tab, session_col, rems_club, meet_name, dry_run, interactive, recheck):
     """Upload deck evaluations from a positions sheet to REMS and mark each row recorded."""
     season_id = parse_season_to_id(season)
+    if not sheet_id:
+        sheet_id = _discover_meet_sheet_id(season, season_folder_id, roster_name_substring)
     gsheet_client = get_gspread_client()
 
     positions_df = read_sheet_tab(sheet_id, positions_tab, gsheet_client)

@@ -10,13 +10,106 @@ def get_gspread_client():
     """
     Returns an authenticated gspread client using Application Default Credentials.
     """
-    scopes = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
-    ]
-    creds, project = google.auth.default(scopes=scopes)
+    creds, project = _get_credentials()
     client = gspread.authorize(creds)
     return client
+
+
+def _get_credentials():
+    scopes = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive',
+    ]
+    return google.auth.default(scopes=scopes)
+
+
+def get_drive_session():
+    """Return a `requests.Session`-like object authenticated to call the Google
+    Drive v3 REST API directly. Used for folder/sheet discovery that gspread
+    doesn't natively support."""
+    from google.auth.transport.requests import AuthorizedSession
+    creds, _ = _get_credentials()
+    return AuthorizedSession(creds)
+
+
+def get_credentials_identity():
+    """Best-effort: return the email/principal currently used by ADC, or None.
+    Useful in error messages when a Drive API call returns empty results due
+    to a missing share."""
+    try:
+        creds, _ = _get_credentials()
+    except Exception:
+        return None
+    for attr in ('service_account_email', '_target_principal', 'signer_email'):
+        value = getattr(creds, attr, None)
+        if value:
+            return value
+    return None
+
+
+_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
+_DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
+_DRIVE_SHEET_MIME = "application/vnd.google-apps.spreadsheet"
+
+
+def list_drive_subfolders(drive_session, parent_folder_id, drive_id=None):
+    """List all sub-folders directly inside `parent_folder_id`. Returns a list
+    of {'id': ..., 'name': ...} dicts. `drive_id` is the shared-drive id when
+    the parent lives in a shared drive (required by the Drive API for listing
+    shared-drive contents)."""
+    return _drive_query(
+        drive_session,
+        q=f"'{parent_folder_id}' in parents and mimeType = '{_DRIVE_FOLDER_MIME}' and trashed = false",
+        drive_id=drive_id,
+    )
+
+
+def find_drive_sheet_in_folder(drive_session, folder_id, name_substring, drive_id=None):
+    """Return the first spreadsheet inside `folder_id` whose name contains
+    `name_substring` (case-insensitive). Returns {'id', 'name'} or None."""
+    files = _drive_query(
+        drive_session,
+        q=f"'{folder_id}' in parents and mimeType = '{_DRIVE_SHEET_MIME}' and trashed = false",
+        drive_id=drive_id,
+    )
+    needle = name_substring.casefold()
+    for f in files:
+        if needle in (f.get('name') or '').casefold():
+            return f
+    return None
+
+
+def _drive_query(drive_session, q, drive_id=None):
+    """Run a Drive v3 files.list query, returning the full file list across
+    pages. Each file is a dict with at least 'id' and 'name'.
+
+    When `drive_id` is set the query is scoped to that specific shared drive
+    (corpora=drive + driveId). Otherwise the query runs across all corpora
+    the caller has access to."""
+    out = []
+    page_token = None
+    while True:
+        params = {
+            "q": q,
+            "fields": "nextPageToken, files(id, name, mimeType)",
+            "pageSize": 200,
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
+        }
+        if drive_id:
+            params["corpora"] = "drive"
+            params["driveId"] = drive_id
+        else:
+            params["corpora"] = "allDrives"
+        if page_token:
+            params["pageToken"] = page_token
+        response = drive_session.get(_DRIVE_FILES_URL, params=params)
+        response.raise_for_status()
+        body = response.json()
+        out.extend(body.get('files', []))
+        page_token = body.get('nextPageToken')
+        if not page_token:
+            return out
 
 def write_df_to_sheet(df, sheet_id, sheet_name, client):
     """

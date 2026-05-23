@@ -828,6 +828,75 @@ def test_upload_deck_evals_interactive_family_skip(
     mock_client.add_member_credential.assert_not_called()
 
 
+@patch('src.main.update_cell')
+@patch('src.main.read_sheet_rows')
+@patch('src.main.read_sheet_tab')
+@patch('src.main.get_gspread_client')
+@patch('src.main.get_drive_session')
+@patch('src.main.list_drive_subfolders')
+@patch('src.main.find_drive_sheet_in_folder')
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_upload_deck_evals_discovers_meet_when_no_sheet_id(
+        mock_mfa, mock_client_class,
+        mock_find_sheet, mock_list_folders, mock_get_drive,
+        mock_get_gs, mock_read_tab, mock_read_rows, mock_update_cell, runner):
+    """No --sheet-id: walk the Drive folder hierarchy and prompt for a meet."""
+    # Two season folders, only one matches 2025-2026.
+    # Inside the matching season, two meet subfolders: one with a roster, one without.
+    def list_subfolders_side_effect(drive, folder_id, drive_id=None):
+        return {
+            'root': [
+                {'id': 'season-2024', 'name': '2024-2025 Season'},
+                {'id': 'season-2025', 'name': '2025-2026 Season'},
+            ],
+            'season-2025': [
+                {'id': 'meet-cunningham', 'name': 'Cunningham Classic 2026'},
+                {'id': 'meet-empty', 'name': 'Empty Meet'},
+            ],
+        }[folder_id]
+    mock_list_folders.side_effect = list_subfolders_side_effect
+
+    def find_sheet_side_effect(drive, folder_id, substring, drive_id=None):
+        return {
+            'meet-cunningham': {'id': 'sheet-abc', 'name': 'Cunningham Classic 2026 - Officials Roster'},
+            'meet-empty': None,
+        }[folder_id]
+    mock_find_sheet.side_effect = find_sheet_side_effect
+
+    _patch_sheet_reads(mock_read_tab, mock_read_rows)
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_member_season_id.return_value = "685100"
+    mock_client.get_member_details.return_value = {
+        'rems_id': 'SC24176410', 'member_id': '178722',
+        'member_season_id': '685100', 'season_id': 232,
+    }
+    mock_client.get_member_credentials.return_value = []
+    mock_client.get_add_credential_form_options.return_value = [
+        {'label': 'Inspector of Turns Evaluation #1', 'credential_id': '442', 'type_id': '127'},
+    ]
+    mock_client.add_member_credential.return_value = True
+
+    # Input "1" picks the only roster-bearing meet (Cunningham).
+    result = runner.invoke(cli, [
+        'upload-deck-evals',
+        '--username', 'u', '--password', 'p',
+        '--season', '2025-2026',
+        # No --sheet-id !
+        '--season-folder-id', 'root',
+    ], input='1\n')
+
+    assert result.exit_code == 0, result.output
+    assert 'Season folder: 2025-2026 Season' in result.output
+    # The empty meet was filtered out; only Cunningham appears in the picker.
+    assert 'Cunningham Classic 2026' in result.output
+    assert 'Empty Meet' not in result.output
+    assert 'Pick a meet' in result.output
+    # And the picked sheet id flowed through to the read calls.
+    mock_read_tab.assert_any_call('sheet-abc', 'Positions', mock_get_gs.return_value)
+
+
 @patch('src.main.read_sheet_rows')
 @patch('src.main.read_sheet_tab')
 @patch('src.main.get_gspread_client')
