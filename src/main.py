@@ -565,7 +565,35 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
     )
     click.echo(f"Loaded {len(name_to_rems_id)} officials from {officials_tab!r}.")
 
-    required = ['Official Name', 'Official Position', 'Official Club', 'Deck Eval Success?', 'Deck Eval Provider', 'Deck Eval Recorded?', session_col]
+    # 'Position Name' is a common alternative spelling for 'Official Position' in
+    # older meet rosters; accept either.
+    position_col = None
+    for candidate in ('Official Position', 'Position Name'):
+        if candidate in positions_df.columns:
+            position_col = candidate
+            break
+    if position_col is None:
+        raise click.ClickException(
+            "Positions tab is missing a position column "
+            "(expected 'Official Position' or 'Position Name')"
+        )
+
+    # 'Deck Eval Reported?' is an older spelling of 'Deck Eval Recorded?'; accept either.
+    recorded_col = None
+    for candidate in ('Deck Eval Recorded?', 'Deck Eval Reported?'):
+        if candidate in positions_df.columns:
+            recorded_col = candidate
+            break
+
+    required = ['Official Name', 'Official Club', 'Deck Eval Success?', session_col]
+    if not recheck:
+        # Recheck doesn't POST or write back, so these aren't needed.
+        required += ['Deck Eval Provider']
+        if recorded_col is None:
+            raise click.ClickException(
+                "Positions tab is missing a recorded column "
+                "(expected 'Deck Eval Recorded?' or 'Deck Eval Reported?')"
+            )
     missing = [c for c in required if c not in positions_df.columns]
     if missing:
         raise click.ClickException(f"Positions tab is missing required columns: {missing}")
@@ -581,7 +609,7 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
         pending_mask = success_mask & club_mask
         click.echo("Recheck mode: verifying every Deck Eval Success?=TRUE row against REMS (no POSTs).")
     else:
-        pending_mask = success_mask & club_mask & positions_df['Deck Eval Recorded?'].apply(_is_blank)
+        pending_mask = success_mask & club_mask & positions_df[recorded_col].apply(_is_blank)
     pending = positions_df[pending_mask]
     excluded_other_club = int((success_mask & ~club_mask).sum())
     noun = "row(s) to verify" if recheck else "pending deck eval(s) to upload"
@@ -598,8 +626,8 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
     failures = 0
     for idx, row in pending.iterrows():
         name = str(row['Official Name']).strip()
-        position = str(row['Official Position']).strip()
-        provider = str(row['Deck Eval Provider']).strip()
+        position = str(row[position_col]).strip()
+        provider = str(row['Deck Eval Provider']).strip() if 'Deck Eval Provider' in row else ''
         session = str(row[session_col]).strip()
         date_raw = session_dates.get(session)
         if not date_raw:
@@ -658,8 +686,10 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
                 cred_id = _credential_id_from_swap(e.credential or {})
                 if cred_id:
                     click.echo(f"    {_credential_view_url(member_season_id, member_id, cred_id)}")
-                if not dry_run:
-                    update_cell(sheet_id, positions_tab, idx, 'Deck Eval Recorded?', True, gsheet_client)
+                # Tick the cell to TRUE only when we're in the normal flow.
+                # Recheck is verify-only; the cell is already TRUE in that path.
+                if not dry_run and not recheck and recorded_col:
+                    update_cell(sheet_id, positions_tab, idx, recorded_col, True, gsheet_client)
                 successes += 1
                 continue
             except NoMatchingCredentialError as e:
@@ -684,8 +714,8 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
                     cred_id = _credential_id_from_swap(e.credential or {})
                     if cred_id:
                         click.echo(f"    {_credential_view_url(member_season_id, member_id, cred_id)}")
-                    if not dry_run:
-                        update_cell(sheet_id, positions_tab, idx, 'Deck Eval Recorded?', True, gsheet_client)
+                    if not dry_run and not recheck and recorded_col:
+                        update_cell(sheet_id, positions_tab, idx, recorded_col, True, gsheet_client)
                     successes += 1
                     continue
 
@@ -735,7 +765,8 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
                 start_date=start_date,
                 description=description,
             )
-            update_cell(sheet_id, positions_tab, idx, 'Deck Eval Recorded?', True, gsheet_client)
+            if recorded_col:
+                update_cell(sheet_id, positions_tab, idx, recorded_col, True, gsheet_client)
             click.echo(f"  OK row {idx}: {name} / {label} (session {session})")
             successes += 1
         except Exception as e:
