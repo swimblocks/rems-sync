@@ -1,5 +1,8 @@
 # REMS Sync
 
+[![ci](https://github.com/gavinbee/rems-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/gavinbee/rems-sync/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 This project is a Python-based CLI tool to synchronize data from the Swimming Canada REMS system.
 
 ## Features
@@ -296,3 +299,6 @@ For each pending row:
 5. Otherwise the new credential is POSTed and the cell ticked on a 302 success.
 
 Failures on individual rows are reported but do not abort the batch (unless you pick `q` in interactive mode).
+## License
+
+[MIT](LICENSE) © 2026 Gavin Bee.
