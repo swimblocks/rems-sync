@@ -1,5 +1,5 @@
 beautifulsoup4>=4.12
-click>=8.1
+click>=8.4.1
 google-auth>=2.30
 gspread>=6.0
 lxml>=5.0
