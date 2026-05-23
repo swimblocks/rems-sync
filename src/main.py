@@ -213,6 +213,51 @@ def _resolve_deck_eval_credential(client, member_season_id, member_id, position,
     )
 
 
+def _check_and_fix_provider(client, gsheet_client, sheet_id, positions_tab, row_idx,
+                             member_season_id, member_id, credential_id,
+                             sheet_provider, sheet_has_provider_col,
+                             interactive, dry_run):
+    """Verify that an existing REMS credential has a sane provider field.
+    If it's empty / 'TRUE' / 'FALSE' (the legacy checkbox-leak bug), report
+    it; in --interactive, prompt to fix in REMS (and write back to the sheet)."""
+    details = client.get_member_credential_details(member_season_id, member_id, credential_id)
+    current = (details.get('provider') or '').strip()
+    if current and current.upper() not in ('TRUE', 'FALSE'):
+        return  # provider is fine
+
+    click.echo(f"    Existing eval has bad provider {current!r}.")
+    if not interactive:
+        return
+
+    new_provider = click.prompt(
+        "    Deck Eval Provider (evaluator name)",
+        default="", show_default=False,
+    ).strip()
+    if not new_provider:
+        return
+
+    if dry_run:
+        click.echo(f"    [dry-run] would set provider to {new_provider!r}")
+        return
+
+    try:
+        client.update_member_credential(
+            member_season_id, member_id, credential_id,
+            field_overrides={"provider": new_provider},
+        )
+        click.echo(f"    Updated REMS provider to {new_provider!r}.")
+    except Exception as e:
+        click.echo(f"    FAIL: update_member_credential raised: {e}", err=True)
+        return
+
+    # Persist to the sheet too if the column is present (or was just added).
+    if sheet_has_provider_col:
+        try:
+            update_cell(sheet_id, positions_tab, row_idx, 'Deck Eval Provider', new_provider, gsheet_client)
+        except Exception as e:
+            click.echo(f"    (could not also write to sheet: {e})", err=True)
+
+
 def _credential_view_url(member_season_id, member_id, credential_id):
     """Full REMS URL for viewing/editing a member credential — handy to print
     so the user can verify what the tool's report refers to."""
@@ -782,6 +827,17 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
                 # Recheck is verify-only; the cell is already TRUE in that path.
                 if not dry_run and not recheck and recorded_col:
                     update_cell(sheet_id, positions_tab, idx, recorded_col, True, gsheet_client)
+                # In recheck, verify the existing REMS record's provider field
+                # — earlier versions of this tool occasionally recorded the
+                # provider as blank or 'FALSE' (a checkbox-leak bug).
+                if recheck and cred_id:
+                    _check_and_fix_provider(
+                        client, gsheet_client, sheet_id, positions_tab, idx,
+                        member_season_id, member_id, cred_id,
+                        sheet_provider=provider,
+                        sheet_has_provider_col=('Deck Eval Provider' in positions_df.columns),
+                        interactive=interactive, dry_run=dry_run,
+                    )
                 successes += 1
                 continue
             except NoMatchingCredentialError as e:
@@ -808,6 +864,14 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
                         click.echo(f"    {_credential_view_url(member_season_id, member_id, cred_id)}")
                     if not dry_run and not recheck and recorded_col:
                         update_cell(sheet_id, positions_tab, idx, recorded_col, True, gsheet_client)
+                    if recheck and cred_id:
+                        _check_and_fix_provider(
+                            client, gsheet_client, sheet_id, positions_tab, idx,
+                            member_season_id, member_id, cred_id,
+                            sheet_provider=provider,
+                            sheet_has_provider_col=('Deck Eval Provider' in positions_df.columns),
+                            interactive=interactive, dry_run=dry_run,
+                        )
                     successes += 1
                     continue
 
