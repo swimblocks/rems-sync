@@ -559,7 +559,8 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
             season, season_folder_id, roster_name_substring, interactive=interactive,
         )
 
-    # One login covers every sheet.
+    # One login covers every sheet — the cookie cache makes subsequent login()
+    # calls cheap, but we don't even need them.
     client = REMSClient(username, password, get_mfa_code)
     client.login()
 
@@ -773,14 +774,38 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
                     successes += 1
                     continue
 
+            # Track whether the user has already approved adding this row;
+            # used to suppress the regular interactive Submit? prompt below
+            # when we already prompted via the recheck-missing path.
+            recheck_missing_approved = False
             if recheck:
-                # Verify-only: the row isn't in REMS (no real match, no swap).
-                # Report and move on, never POST.
-                click.echo(f"  MISSING row {idx} ({name} / {position}): "
-                           f"REMS has no matching {label} for meet={meet_name!r} "
-                           f"session={description!r}")
-                failures += 1
-                continue
+                if interactive:
+                    click.echo(
+                        f"\n  MISSING row {idx}: {name} ({rems_id}) / {position}\n"
+                        f"    REMS has no matching {label} for meet={meet_name!r} "
+                        f"session={description!r}\n"
+                        f"    Add it now?"
+                    )
+                    choice = click.prompt(
+                        "    [y]es / [n]o (skip) / [q]uit batch",
+                        default="n", show_default=True,
+                    ).strip().lower()
+                    if choice in ('q', 'quit'):
+                        click.echo("  Aborting batch.")
+                        break
+                    if choice not in ('y', 'yes'):
+                        click.echo(f"  MISSING row {idx} (skipped)")
+                        failures += 1
+                        continue
+                    recheck_missing_approved = True
+                    # Fall through to the POST logic.
+                else:
+                    # Verify-only with no prompt: report and continue.
+                    click.echo(f"  MISSING row {idx} ({name} / {position}): "
+                               f"REMS has no matching {label} for meet={meet_name!r} "
+                               f"session={description!r}")
+                    failures += 1
+                    continue
 
             if dry_run:
                 click.echo(f"  [dry-run] row {idx}: {name} ({rems_id}) / {label} "
@@ -789,7 +814,7 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
                 successes += 1
                 continue
 
-            if interactive:
+            if interactive and not recheck_missing_approved:
                 click.echo(
                     f"\n  Row {idx}: {name} ({rems_id})\n"
                     f"    Credential: {label} (credential_id={credential_id})\n"
