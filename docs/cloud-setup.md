@@ -1,6 +1,6 @@
 # Cloud setup (optional)
 
-> **You do not need any of this to run `rems-sync` from your laptop.** This document covers the GCP infrastructure that would let `rems-sync` run unattended (a Cloud Run job, a service-account identity, a scheduled trigger). It is scaffolding for [#63 — Epic: run rems-sync in the cloud](https://github.com/gavinbee/rems-sync/issues/63); the current CLI auths with user OAuth via `gcloud auth application-default login` and never touches the service account at runtime.
+> **You do not need any of this to run `rems-sync` from your laptop.** This document covers the GCP infrastructure that would let `rems-sync` run unattended (a Cloud Run job, a service-account identity, a scheduled trigger). It is scaffolding for [#63 — Epic: run rems-sync in the cloud](https://github.com/swimblocks/rems-sync/issues/63); the current CLI auths with user OAuth via `gcloud auth application-default login` and never touches the service account at runtime.
 >
 > If you just want to use the CLI interactively, see [Installation in the README](../README.md#installation) instead.
 
@@ -62,7 +62,7 @@ What's already done by this Terraform config:
 - ✅ `rems-sync-sa` service account exists
 - ✅ Operator can impersonate the SA via `gcloud auth application-default login --impersonate-service-account=...`
 
-What's still missing for an actual cloud deployment (tracked in [#63](https://github.com/gavinbee/rems-sync/issues/63)):
+What's still missing for an actual cloud deployment (tracked in [#63](https://github.com/swimblocks/rems-sync/issues/63)):
 
 - ❌ REMS credentials / cookie blob in Secret Manager
 - ❌ Container image + Cloud Run job
