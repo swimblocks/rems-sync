@@ -1,6 +1,6 @@
 # rems-sync
 
-[![ci](https://github.com/gavinbee/rems-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/gavinbee/rems-sync/actions/workflows/ci.yml)
+[![ci](https://github.com/swimblocks/rems-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/swimblocks/rems-sync/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Python CLI that syncs data between Swimming Canada's **REMS / SportLomo** officials registry and Google Sheets. Pulls members, member details, and credentials out of REMS for reporting; pushes deck evaluations from a meet's roster sheet back into REMS.
@@ -15,7 +15,7 @@ Python CLI that syncs data between Swimming Canada's **REMS / SportLomo** offici
 ## Quick start
 
 ```bash
-git clone https://github.com/gavinbee/rems-sync.git
+git clone https://github.com/swimblocks/rems-sync.git
 cd rems-sync
 python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -42,7 +42,7 @@ The first authenticated REMS command of a session triggers an MFA prompt. Cookie
 
 - [Authentication & MFA flow](docs/auth.md) — how REMS login + cookie cache + auto-reauth work end-to-end
 - [Deck evaluation upload](docs/deck-eval-upload.md) — design and behaviour of `add-deck-eval` / `upload-deck-evals`
-- [Cloud setup (optional)](docs/cloud-setup.md) — Terraform + service-account scaffolding for a future scheduled deployment ([#63](https://github.com/gavinbee/rems-sync/issues/63))
+- [Cloud setup (optional)](docs/cloud-setup.md) — Terraform + service-account scaffolding for a future scheduled deployment ([#63](https://github.com/swimblocks/rems-sync/issues/63))
 
 ## Contributing
 
