@@ -1,7 +1,6 @@
 # rems-sync
 
-[![ci](https://github.com/swimblocks/rems-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/swimblocks/rems-sync/actions/workflows/ci.yml)
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![ci](https://github.com/swimblocks/rems-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/swimblocks/rems-sync/actions) [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Python CLI that syncs data between Swimming Canada's **REMS / SportLomo** officials registry and Google Sheets. Pulls members, member details, and credentials out of REMS for reporting; pushes deck evaluations from a meet's roster sheet back into REMS.
 
