@@ -8,7 +8,8 @@ Python CLI that syncs data between Swimming Canada's **REMS / SportLomo** offici
 ## Prerequisites
 
 - **Python 3.12+**
-- **Google Cloud CLI** (`gcloud`) — needed for the Application Default Credentials login, _not_ for any GCP project. Install via [cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install); platform shortcuts: [Windows](https://cloud.google.com/sdk/docs/install#windows) · [macOS](https://cloud.google.com/sdk/docs/install#mac) · [Linux](https://cloud.google.com/sdk/docs/install#linux).
+- **Google Cloud CLI** (`gcloud`) — needed for Google authentication. Install via [cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install); platform shortcuts: [Windows](https://cloud.google.com/sdk/docs/install#windows) · [macOS](https://cloud.google.com/sdk/docs/install#mac) · [Linux](https://cloud.google.com/sdk/docs/install#linux).
+- A **GCP project** with the Sheets and Drive APIs enabled and an `rems-sync-sa` service account provisioned — one-time setup via Terraform, see [docs/cloud-setup.md](docs/cloud-setup.md).
 - A **REMS / SportLomo officials-portal login** with permission to manage your club's officials.
 - **Editor access** to the target Google Sheet (whoever owns the sheet shares it with the Google account you'll log into below).
 
@@ -20,16 +21,16 @@ cd rems-sync
 python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# One-time Google auth — uses your own account, no GCP project required:
-gcloud auth application-default login
+# One-time Google auth — impersonate the provisioned service account
+# (see docs/cloud-setup.md for the one-time Terraform prerequisite):
+gcloud auth application-default login \
+  --impersonate-service-account=rems-sync-sa@<your_project_id>.iam.gserviceaccount.com
 
 # Smoke-test the REMS login (warms the cookie cache so later commands skip MFA):
 python -m src.main login --username <user> --password <pw>
 ```
 
 The first authenticated REMS command of a session triggers an MFA prompt. Cookies are cached to `~/.rems-sync/cookies.json` so subsequent runs reuse the session without prompting.
-
-> Running unattended in the cloud? You'll want a service account, not user OAuth. See [docs/cloud-setup.md](docs/cloud-setup.md). For interactive workstation use the user OAuth above is enough.
 
 ## Features
 
@@ -52,12 +53,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). One issue → one branch (`{issue-number
 
 ### Authentication
 
-Each command that interacts with REMS requires your REMS username and password for authentication. You can provide these as command-line options or environment variables.
+Each command that interacts with REMS accepts your REMS username and password via command-line options or environment variables. When a valid cached session exists (see `~/.rems-sync/cookies.json`), credentials are optional — the cached session is reused automatically.
 
 -   **Command-line options:** `--username <your_username>` and `--password <your_password>`
 -   **Environment variables:** `REMS_USERNAME` and `REMS_PASSWORD`
 
-You will also be prompted for an MFA code during the login process.
+You will be prompted for an MFA code when a new login is required (i.e., no valid cached session exists).
 
 ### Commands
 

@@ -382,16 +382,16 @@ def cli():
     pass
 
 @cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='The REMS username.', required=True)
-@click.option('--password', envvar='REMS_PASSWORD', help='The REMS password.', hide_input=True, required=True)
+@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
+@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
 def login(username, password):
     """Logs in to the REMS system."""
     client = REMSClient(username, password, get_mfa_code)
     client.login()
 
 @cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='The REMS username.', required=True)
-@click.option('--password', envvar='REMS_PASSWORD', help='The REMS password.', hide_input=True, required=True)
+@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
+@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
 @click.option('--output', type=click.Choice(['csv', 'gsheet']), default='csv', help='The output format.')
 @click.option('--output-file', help='The file to write CSV output to (required if output is csv).')
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
@@ -421,8 +421,8 @@ def refresh_members(username, password, output, output_file, sheet_id, sheet_nam
         write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
 
 @cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='The REMS username.', required=True)
-@click.option('--password', envvar='REMS_PASSWORD', help='The REMS password.', hide_input=True, required=True)
+@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
+@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
 @click.option('--output', type=click.Choice(['csv', 'gsheet']), default='csv', help='The output format.')
 @click.option('--output-file', help='The file to write CSV output to (required if output is csv).')
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
@@ -488,8 +488,8 @@ def refresh_member_details(username, password, output, output_file, sheet_id, sh
             write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
 
 @cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='The REMS username.', required=True)
-@click.option('--password', envvar='REMS_PASSWORD', help='The REMS password.', hide_input=True, required=True)
+@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
+@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
 @click.option('--output', type=click.Choice(['csv', 'gsheet']), default='csv', help='The output format.')
 @click.option('--output-file', help='The file to write CSV output to (required if output is csv).')
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
@@ -576,8 +576,8 @@ def upload_member_credentials(input_file, sheet_id, sheet_name):
 
 
 @cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='The REMS username.', required=True)
-@click.option('--password', envvar='REMS_PASSWORD', help='The REMS password.', hide_input=True, required=True)
+@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
+@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
 @click.option('--season', required=True, help='The season (e.g. "2025-2026").')
 @click.option('--sheet-id', default=None,
               help='The Google Sheet ID with Positions, Grid, and Meet tabs. '
@@ -984,8 +984,8 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
 
 
 @cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='The REMS username.', required=True)
-@click.option('--password', envvar='REMS_PASSWORD', help='The REMS password.', hide_input=True, required=True)
+@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
+@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
 @click.option('--season', required=True, help='The season (e.g. "2025-2026").')
 @click.option('--official-name', required=True, help='Official\'s full name, e.g. "Chris Fletcher".')
 @click.option('--rems-id', default=None, help='REMS ID (e.g. SC24176410); if given, used instead of name search.')
