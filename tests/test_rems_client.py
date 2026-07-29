@@ -912,3 +912,34 @@ def test_get_member_credentials(rems_client):
     assert credentials[0]['actions'] == '/action1'
     assert credentials[1]['name'] == 'Cred Name 2'
     assert credentials[1]['actions'] == '/action2'
+
+
+@responses.activate
+def test_login_succeeds_with_no_credentials_when_cache_valid(tmp_path):
+    """No username/password needed when the cached session probe passes."""
+    cache = tmp_path / "cookies.json"
+    cache.write_text(json.dumps({"Authentication-JWT": "live-token"}))
+    client = REMSClient(cookie_cache_path=cache)
+    responses.add(
+        responses.POST,
+        f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
+        status=200,
+    )
+    assert client.login() is True
+
+
+@responses.activate
+def test_login_raises_clear_error_when_no_credentials_and_cache_stale(tmp_path):
+    """Stale cache + no credentials → ClickException with a human-readable message."""
+    import click
+    cache = tmp_path / "cookies.json"
+    cache.write_text(json.dumps({"Authentication-JWT": "stale-token"}))
+    client = REMSClient(cookie_cache_path=cache)
+    # Probe returns 403 — session is stale.
+    responses.add(
+        responses.POST,
+        f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
+        status=403,
+    )
+    with pytest.raises(click.ClickException, match="no credentials were provided"):
+        client.login()

@@ -52,12 +52,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). One issue → one branch (`{issue-number
 
 ### Authentication
 
-Each command that interacts with REMS requires your REMS username and password for authentication. You can provide these as command-line options or environment variables.
+Each command that interacts with REMS accepts your REMS username and password via command-line options or environment variables. When a valid cached session exists (see `~/.rems-sync/cookies.json`), credentials are optional — the cached session is reused automatically.
 
 -   **Command-line options:** `--username <your_username>` and `--password <your_password>`
 -   **Environment variables:** `REMS_USERNAME` and `REMS_PASSWORD`
 
-You will also be prompted for an MFA code during the login process.
+You will be prompted for an MFA code when a new login is required (i.e., no valid cached session exists).
 
 ### Commands
 
