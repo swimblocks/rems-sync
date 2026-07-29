@@ -533,4 +533,25 @@ def test_add_deck_eval_dry_run_does_reads_but_no_post(mock_mfa, mock_client_clas
     mock_client.login.assert_called_once()
     mock_client.search_member_by_name.assert_called_once()
     mock_client.get_add_credential_form_options.assert_called_once()
+
+
+@patch('src.main.REMSClient')
+@patch('src.main.get_mfa_code')
+def test_refresh_members_csv_no_credentials_uses_cached_session(mock_mfa, mock_client_class, runner, tmp_path):
+    """--username/--password are optional; omitting them is valid when the cached session is live."""
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+    mock_client.get_members_csv.return_value = "header1,header2\nvalue1,value2"
+
+    output_file = tmp_path / "members.csv"
+    result = runner.invoke(cli, [
+        'refresh-members',
+        '--season', '2025',
+        '--output', 'csv',
+        '--output-file', str(output_file),
+    ])
+
+    assert result.exit_code == 0, result.output
+    mock_client_class.assert_called_once_with(None, None, mock_mfa)
+    mock_client.login.assert_called_once()
     mock_client.add_member_credential.assert_not_called()

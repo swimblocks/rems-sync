@@ -36,7 +36,7 @@ def _default_cookie_cache_path():
 class REMSClient:
     BASE_URL = "https://swimming.canada.sportsmanager.ie"
 
-    def __init__(self, username, password, mfa_callback, cookie_cache_path=None):
+    def __init__(self, username=None, password=None, mfa_callback=None, cookie_cache_path=None):
         self.username = username
         self.password = password
         self.mfa_callback = mfa_callback
@@ -170,6 +170,12 @@ class REMSClient:
         # make REMS bounce mfa-login/ <-> mfa-verify-otp instead of rendering
         # the OTP form.
         self.session.cookies.clear()
+
+        if not self.username or not self.password:
+            raise click.ClickException(
+                "No valid cached REMS session found and no credentials were provided. "
+                "Pass --username/--password or set REMS_USERNAME/REMS_PASSWORD."
+            )
 
         # 1. GET the login form page to seed the session.
         self.session.get(f"{self.BASE_URL}/maint.php", allow_redirects=False)
