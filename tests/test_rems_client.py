@@ -626,6 +626,30 @@ def test_get_member_details(rems_client):
     }
 
 @responses.activate
+def test_get_member_details_current_markup(rems_client):
+    # REMS's late-2026 markup: the "View Credentials" link uses btn-aporb classes and only
+    # the inner <span> carries smr-button-text. member_id must still be extracted.
+    member_season_id = 813396
+    season_id = 233
+    html_response = f"""
+    <input id="member-member-identifiers-0-member-identifier" value="SC24072744" />
+    <a href="/sportlomo/user/membership-management/members/{member_season_id}" class="btn-aporb btn btn-sm btn-primary"><span class="ssm-button-text smr-button-text">View All</span></a>
+    <a href="/sportlomo/user/credentials/member-credentials-details/{member_season_id}/74458" class="btn-aporb btn btn-sm btn-primary">
+        <i class="fa fa-list-alt"></i>
+        <span class="ssm-button-text smr-button-text">View Credentials</span>
+    </a>
+    """
+    responses.add(
+        responses.GET,
+        f"{rems_client.BASE_URL}/sportlomo/user/membership-management/member-detail/{member_season_id}",
+        body=html_response,
+        status=200,
+    )
+
+    details = rems_client.get_member_details(member_season_id, season_id)
+    assert details['member_id'] == '74458'
+
+@responses.activate
 def test_get_member_credential_details(rems_client):
     member_season_id = 685100
     member_id = 178722
