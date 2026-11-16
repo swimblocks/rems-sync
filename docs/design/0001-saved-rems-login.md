@@ -59,19 +59,29 @@ As semotion-sync:
   Secret Service), service `rems-sync/<alias>`, keyed by username.
 - Changing an alias's username saves the new password and username first, then removes the
   old password, so a failure part way leaves a working login. A refused delete is reported.
-- `auth logout` removes the password before the username; if the keychain refuses, nothing is
-  removed.
+- `auth logout` removes the password before the username; if the keychain refuses, the login
+  is not removed. (rems-sync also deletes the session first; see below.)
 
 REMS-specific:
 
 - **Session:** the REMS cookie jar, as JSON, in the keychain under service
-  `rems-sync/<alias>/session`, keyed by the username the run resolved (saved login or env
+  `rems-sync-session/<alias>`, keyed by the username the run resolved (saved login or env
   vars). It replaces `~/.rems-sync/cookies.json`; no session reaches a plain file.
+  - The `rems-sync-session/` prefix is distinct from the passwords' `rems-sync/`, so no
+    alias can make a password entry and a session entry share a service name (with a shared
+    prefix, alias `row/session`'s password would land on alias `row`'s session).
   - Keyed by alias *and* account: an env override for account B under alias `row` reads and
     writes B's entry only, so it never reuses account A's session, and A's session is still
     there when the override is removed.
-  - Changing an alias's username and `auth logout` remove the old account's session entry
-    along with its password, with the same ordering and refused-delete handling.
+  - The session is a cache, not part of the login: losing it costs an MFA prompt, nothing
+    more. So when an entry has to go, the session goes first and the login is never left
+    half-removed:
+    - `auth logout` deletes the session, then the password, then the username. If the
+      session delete is refused, it stops with nothing removed. If the password delete is
+      then refused, the login is intact (username and password both still saved), only the
+      session is gone, and the error says so.
+    - Changing an alias's username removes the old account's session after the old
+      password, best-effort: a refused delete is a warning, not a failure.
   - Size: Windows Credential Manager holds at most 2,560 bytes per entry; keyring stores
     UTF-16, so about 1,280 characters. A cached session measured 614 bytes (2 cookies).
     If a write fails for any reason (size, keychain error), the run warns and continues
@@ -135,9 +145,11 @@ also clears the env vars and redirects the config file.
 | Only one env var set | Error, not a fall back to the saved login |
 | `--username` / `--password` passed | Rejected as unknown options |
 | An alias's password missing from the keychain | `auth status` flags it, exits non-zero |
-| Change an alias's username | Old password and session removed; refused delete reported, new login kept |
+| Change an alias's username | Old password and session removed; refused password delete reported, refused session delete warned; new login kept |
+| Aliases `row` and `row/session`, same username | Password and session entries never collide; each alias's login and session intact |
 | `auth logout` for an unknown alias | Error, non-zero |
-| `auth logout`, keychain refuses delete | Login unchanged, error reported |
+| `auth logout`, keychain refuses the session delete | Nothing removed, error reported |
+| `auth logout`, session deleted but password delete refused | Username and password still saved, session gone; error says so |
 | No session or password in any file | `~/.rems-sync/` gets nothing new |
 
 Acceptance: after one `auth login --team row`, the full registration refresh runs with no
