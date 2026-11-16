@@ -2,6 +2,7 @@ import json
 
 import pytest
 import responses
+from faker import Faker
 
 from src.rems_client import REMSClient
 
@@ -624,6 +625,36 @@ def test_get_member_details(rems_client):
         'member_season_id': member_season_id,
         'season_id': season_id,
     }
+
+@responses.activate
+def test_get_member_details_current_markup(rems_client):
+    # REMS's late-2026 markup: the "View Credentials" link uses btn-aporb classes and only
+    # the inner <span> carries smr-button-text. member_id must still be extracted.
+    # Identifiers are synthetic (seeded Faker, seed 95); none belong to a real member.
+    fake = Faker("en_CA")
+    fake.seed_instance(95)
+    member_season_id = fake.random_int(100000, 999999)
+    member_id = str(fake.random_int(10000, 99999))
+    rems_id = fake.numerify("SC########")
+    season_id = 233
+    html_response = f"""
+    <input id="member-member-identifiers-0-member-identifier" value="{rems_id}" />
+    <a href="/sportlomo/user/membership-management/members/{member_season_id}" class="btn-aporb btn btn-sm btn-primary"><span class="ssm-button-text smr-button-text">View All</span></a>
+    <a href="/sportlomo/user/credentials/member-credentials-details/{member_season_id}/{member_id}" class="btn-aporb btn btn-sm btn-primary">
+        <i class="fa fa-list-alt"></i>
+        <span class="ssm-button-text smr-button-text">View Credentials</span>
+    </a>
+    """
+    responses.add(
+        responses.GET,
+        f"{rems_client.BASE_URL}/sportlomo/user/membership-management/member-detail/{member_season_id}",
+        body=html_response,
+        status=200,
+    )
+
+    details = rems_client.get_member_details(member_season_id, season_id)
+    assert details['member_id'] == member_id
+    assert details['rems_id'] == rems_id
 
 @responses.activate
 def test_get_member_credential_details(rems_client):
