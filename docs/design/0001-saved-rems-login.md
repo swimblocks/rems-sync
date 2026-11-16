@@ -9,18 +9,19 @@ They are only *used* when the cached REMS session (`~/.rems-sync/cookies.json`, 
 has expired, but that happens on most runs, so the user retypes the password, leaves it in
 shell history, or keeps it in the environment. And there is one cookie cache, so only one
 REMS account can be used at a time, though one person may hold several REMS logins (one per
-club, or per club and role).
+club, or per club and role). The cache itself is a live session token in a plain JSON file.
 
 `semotion-sync` solved the same problem with saved logins keyed by alias: username in a
 config file, password in the OS keychain via `keyring`, managed by `auth login/status/logout`
 ([its design doc](https://github.com/swimblocks/semotion-sync/blob/main/docs/design/0001-account-sync.md#authentication)).
-This brings that design here unchanged except where REMS differs, so both tools behave the
-same way.
+This brings that design here unchanged, and adds the one thing REMS needs that semotion
+doesn't: a session cache, kept in the keychain alongside the password.
 
 ### Constraints
 
 - REMS login has an **emailed MFA code** and a cookie cache ([auth.md](../auth.md)); semotion
-  has neither. A saved password does not remove the MFA prompt; it removes the retyping.
+  has neither. A saved password does not remove the MFA prompt; it removes the retyping. The
+  session cache is what keeps MFA to roughly once an hour.
 - Tests and CI must never touch a real keychain.
 
 ## Design
@@ -30,17 +31,15 @@ same way.
 ```
 python -m src.main auth login --team <alias>    prompt for username and password, log in to REMS (with MFA), save
 python -m src.main auth status                  the saved username per alias
-python -m src.main auth logout --team <alias>   remove the saved login
+python -m src.main auth logout --team <alias>   remove the saved login and its session
 ```
 
 - `--team ALIAS` names a saved login: a club (`row`), or a club and role (`row-referee`) when
-  one person holds several REMS logins for a club. Aliases are lowercase letters, digits and
-  `-` (`^[a-z0-9][a-z0-9-]{0,62}$`); anything else is rejected. They become config keys and
-  keychain service names, so a narrow alphabet keeps them unambiguous everywhere.
+  one person holds several REMS logins for a club. As in semotion-sync it is free text; it is
+  only ever a config key and part of a keychain service name, never a file path.
 - `auth login` always prompts; it does not read options or env vars. It does a **fresh** REMS
-  login (not the cookie cache), so a mistyped password is never saved. The session it gets is
-  written to that *account's* cookie cache (below), never the alias's, so a save that fails
-  part way can't leave one account's session behind another account's saved login.
+  login (not the cached session), so a mistyped password is never saved. The resulting
+  session is held in memory and written only after the username and password are saved.
 - The username prompt defaults to the alias's saved username.
 - The old top-level `login` command is removed; `auth login` replaces it.
 - `--username`/`--password` are removed from every command. Credentials are never passed on
@@ -65,31 +64,42 @@ As semotion-sync:
 
 REMS-specific:
 
-- **Cookie cache per account, not per alias:** a REMS session belongs to the account that
-  logged in, so the cache is keyed by the username a run actually resolved (saved login or
-  env vars): `~/.rems-sync/cookies/<sha256(normalized username)[:16]>.json`, replacing the
-  single `~/.rems-sync/cookies.json`. Normalized means trimmed and lowercased.
-  - A run only ever loads the session of the account whose credentials it holds, so an env
-    var override for account B never reuses account A's session under the same alias, and
-    A's session is untouched for when the override is removed.
-  - Two aliases with the same username share one session, which is correct: it's one account.
-  - The filename is derived only from a hash, so no alias or username text reaches the
-    filesystem: no path traversal, no case-folding collisions, no usernames in filenames.
+- **Session:** the REMS cookie jar, as JSON, in the keychain under service
+  `rems-sync/<alias>/session`, keyed by the username the run resolved (saved login or env
+  vars). It replaces `~/.rems-sync/cookies.json`; no session reaches a plain file.
+  - Keyed by alias *and* account: an env override for account B under alias `row` reads and
+    writes B's entry only, so it never reuses account A's session, and A's session is still
+    there when the override is removed.
+  - Changing an alias's username and `auth logout` remove the old account's session entry
+    along with its password, with the same ordering and refused-delete handling.
+  - Size: Windows Credential Manager holds at most 2,560 bytes per entry; keyring stores
+    UTF-16, so about 1,280 characters. A cached session measured 614 bytes (2 cookies).
+    If a write fails for any reason (size, keychain error), the run warns and continues
+    without a cache: MFA on the next run, never a failed command.
+- `REMSClient` takes a small session store (load / save / clear) instead of a cookie file
+  path. The cache logic (probe, reuse, mid-run re-login on 403) is unchanged.
 
 ### Where a command's credentials come from
 
 As semotion-sync:
 
 1. `REMS_USERNAME` and `REMS_PASSWORD`, when both are set, override the saved login for the
-   alias the run names (for a machine with no keychain). Read through keyring's
-   `EnvironCredential`.
+   alias the run names. Read through keyring's `EnvironCredential`.
 2. Otherwise, the alias's saved login.
 
 - Setting only one of the two env vars is an error, not a silent fall back to the saved login.
 - With neither, the command exits non-zero telling the user to run `auth login --team <alias>`.
   It never prompts mid-run (an MFA code excepted).
 
-The login is only *used* on a cookie-cache miss, as today.
+The password is only *used* when there is no live session, as today.
+
+### Machines without an OS keychain
+
+Everything goes through `keyring`, so a machine with no OS keychain (e.g. a future headless
+deployment, #63) is given a different keyring backend, such as a file-backed one, by
+configuration (`PYTHON_KEYRING_BACKEND` or `keyringrc.cfg`). No credential or session code
+changes. Without one, the env vars still work, but no session can be cached, so every run
+needs MFA.
 
 ### Interaction with `scripts/refresh-registration.ps1`
 
@@ -100,49 +110,50 @@ each REMS command.
 
 | | semotion-sync | rems-sync | Why |
 |---|---|---|---|
-| Alias | Motion team slug, used in URLs | Label (`row`, `row-referee`), `[a-z0-9-]` | REMS URLs don't name the club |
 | Login check | Fresh login | Fresh login **with MFA** | REMS requires it |
-| Session cache | None | Cookie cache per account (hashed username) | REMS has one; must never cross accounts |
+| Session cache | None | Keychain, per alias and account | REMS has one; it is a credential, and must never cross accounts |
+
+Everything else (commands, `--team`, storage, env vars, ordering) is the same.
 
 ## Verification
 
 `ruff check` and `pytest -q`, green locally and in CI. Tests use an in-memory keychain
 (`tests/fake_keyring.py`, copied from semotion-sync) installed by an autouse fixture, which
-also clears the env vars and redirects the config file and cookie directory.
+also clears the env vars and redirects the config file.
 
 | Case | Expected |
 |---|---|
 | `auth login` with a wrong password | Error; nothing saved; password never printed |
-| `auth login` succeeds | Fresh login (not cache); login saved under the alias |
-| `auth login` switches alias from A to B, then saving fails | Alias still resolves to A, and A's cache is untouched |
-| Two aliases, different accounts | Each run uses only its own account's login and cookie cache |
-| Two aliases, same account | They share one cookie cache |
-| Env override A → B → A with live caches | Each run uses only the resolved account's cache; A's session survives B's run |
-| Username differs only in case or surrounding spaces | Same cache file |
-| Alias `../cookies`, `ROW`, `a/b`, empty | Rejected before any file or keychain access |
+| `auth login` succeeds | Fresh login (not cache); login and then session saved under the alias |
+| `auth login` switches alias from A to B, then saving fails | Alias still resolves to A; no B session written; A's session untouched |
+| Two aliases | Each run uses only its own alias's login and session |
+| Env override A → B → A with live sessions | Each run uses only the resolved account's session; A's survives B's run |
+| Session write refused or too large | Warning; command still succeeds; next run logs in afresh |
+| Stored session unreadable or not JSON | Treated as no session; fresh login |
 | Command with no saved login for the alias | Non-zero exit naming `auth login --team <alias>` |
 | Both env vars set and login saved | Env vars win |
 | Only one env var set | Error, not a fall back to the saved login |
 | `--username` / `--password` passed | Rejected as unknown options |
 | An alias's password missing from the keychain | `auth status` flags it, exits non-zero |
-| Change an alias's username | Old password removed; refused delete reported, new login kept |
+| Change an alias's username | Old password and session removed; refused delete reported, new login kept |
 | `auth logout` for an unknown alias | Error, non-zero |
 | `auth logout`, keychain refuses delete | Login unchanged, error reported |
+| No session or password in any file | `~/.rems-sync/` gets nothing new |
 
 Acceptance: after one `auth login --team row`, the full registration refresh runs with no
-username or password typed (an MFA code may still be asked for).
+username or password typed (an MFA code may still be asked for), and a cached session saved
+by a fresh MFA login is measured against the 2,560-byte limit.
 
 ## Decisions
 
-1. **`auth logout` and the cookie cache.** semotion-sync has no cache, so there is no
-   precedent. Logout also deletes the cookie file of the alias's account, so "logged out"
-   means the tool can no longer act as that login. If another alias uses the same account,
-   its next run simply logs in afresh.
-2. **Existing `~/.rems-sync/cookies.json`.** Ignored (it expires within the hour); the first
-   run per account logs in afresh.
+1. **`auth logout` and the session.** semotion-sync has no session, so there is no
+   precedent. Logout also deletes the alias's session entry, so "logged out" means the tool
+   can no longer act as that login.
+2. **Existing `~/.rems-sync/cookies.json`.** Ignored (it expires within the hour) and no
+   longer written; the first run per alias logs in afresh. The file can be deleted by hand.
 3. **Breaking change.** Removing `--username`/`--password` and top-level `login` breaks
-   existing commands and docs. README, `docs/auth.md`, `docs/deck-eval-upload.md` and the
-   script are updated in the implementation PR.
+   existing commands and docs. README, `docs/auth.md`, `docs/deck-eval-upload.md`, AGENTS.md
+   and the script are updated in the implementation PR.
 
 ## Open items
 
