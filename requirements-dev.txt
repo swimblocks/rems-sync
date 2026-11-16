@@ -1,2 +1,3 @@
 -r requirements.txt
 ruff>=0.15.17
+faker>=30.0

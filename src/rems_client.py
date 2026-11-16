@@ -391,8 +391,10 @@ class REMSClient:
 
         soup = BeautifulSoup(response.text, 'lxml')
 
+        # Match on the href, not CSS classes: REMS restyled this button in 2026 (dropping
+        # `smr-button` from the <a>), which silently blanked member_id for every member.
         member_id = None
-        for a in soup.select('a.smr-button'):
+        for a in soup.select('a[href]'):
             href = a.get('href', '')
             match = re.search(r'member-credentials-details/(\d+)/(\d+)', href)
             if match:
