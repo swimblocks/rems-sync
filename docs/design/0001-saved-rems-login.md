@@ -33,17 +33,20 @@ python -m src.main auth status                  the saved username per alias
 python -m src.main auth logout --team <alias>   remove the saved login
 ```
 
-- `--team ALIAS` names a saved login. It is free text: a club (`row`), or a club and role
-  (`row-referee`) when one person holds several REMS logins for a club.
+- `--team ALIAS` names a saved login: a club (`row`), or a club and role (`row-referee`) when
+  one person holds several REMS logins for a club. Aliases are lowercase letters, digits and
+  `-` (`^[a-z0-9][a-z0-9-]{0,62}$`); anything else is rejected. They become config keys and
+  keychain service names, so a narrow alphabet keeps them unambiguous everywhere.
 - `auth login` always prompts; it does not read options or env vars. It does a **fresh** REMS
-  login (not the cookie cache), so a mistyped password is never saved, and warms that
-  alias's cookie cache.
+  login (not the cookie cache), so a mistyped password is never saved. The session it gets is
+  written to that *account's* cookie cache (below), never the alias's, so a save that fails
+  part way can't leave one account's session behind another account's saved login.
 - The username prompt defaults to the alias's saved username.
 - The old top-level `login` command is removed; `auth login` replaces it.
 - `--username`/`--password` are removed from every command. Credentials are never passed on
   the command line, where they land in shell history and the process list.
 - Every REMS command takes `--team ALIAS` (required, as in semotion-sync), and uses that
-  alias's saved login and cookie cache. It stays required even when only one login is saved:
+  alias's saved login. It stays required even when only one login is saved:
   defaulting to the only login would make the same command line mean a different account
   once a second login is added, and REMS writes (deck evals) must go to the intended account.
 
@@ -62,8 +65,16 @@ As semotion-sync:
 
 REMS-specific:
 
-- **Cookie cache per alias:** `~/.rems-sync/cookies/<alias>.json`, replacing the single
-  `~/.rems-sync/cookies.json`, so a session for one login is never used for another.
+- **Cookie cache per account, not per alias:** a REMS session belongs to the account that
+  logged in, so the cache is keyed by the username a run actually resolved (saved login or
+  env vars): `~/.rems-sync/cookies/<sha256(normalized username)[:16]>.json`, replacing the
+  single `~/.rems-sync/cookies.json`. Normalized means trimmed and lowercased.
+  - A run only ever loads the session of the account whose credentials it holds, so an env
+    var override for account B never reuses account A's session under the same alias, and
+    A's session is untouched for when the override is removed.
+  - Two aliases with the same username share one session, which is correct: it's one account.
+  - The filename is derived only from a hash, so no alias or username text reaches the
+    filesystem: no path traversal, no case-folding collisions, no usernames in filenames.
 
 ### Where a command's credentials come from
 
@@ -89,9 +100,9 @@ each REMS command.
 
 | | semotion-sync | rems-sync | Why |
 |---|---|---|---|
-| Alias | Motion team slug, used in URLs | Free-text label (`row`, `row-referee`) | REMS URLs don't name the club |
+| Alias | Motion team slug, used in URLs | Label (`row`, `row-referee`), `[a-z0-9-]` | REMS URLs don't name the club |
 | Login check | Fresh login | Fresh login **with MFA** | REMS requires it |
-| Session cache | None | Cookie cache per alias | REMS has one; must not cross logins |
+| Session cache | None | Cookie cache per account (hashed username) | REMS has one; must never cross accounts |
 
 ## Verification
 
@@ -103,7 +114,12 @@ also clears the env vars and redirects the config file and cookie directory.
 |---|---|
 | `auth login` with a wrong password | Error; nothing saved; password never printed |
 | `auth login` succeeds | Fresh login (not cache); login saved under the alias |
-| Two aliases saved | Each command uses its alias's login and cookie cache only |
+| `auth login` switches alias from A to B, then saving fails | Alias still resolves to A, and A's cache is untouched |
+| Two aliases, different accounts | Each run uses only its own account's login and cookie cache |
+| Two aliases, same account | They share one cookie cache |
+| Env override A → B → A with live caches | Each run uses only the resolved account's cache; A's session survives B's run |
+| Username differs only in case or surrounding spaces | Same cache file |
+| Alias `../cookies`, `ROW`, `a/b`, empty | Rejected before any file or keychain access |
 | Command with no saved login for the alias | Non-zero exit naming `auth login --team <alias>` |
 | Both env vars set and login saved | Env vars win |
 | Only one env var set | Error, not a fall back to the saved login |
@@ -116,13 +132,18 @@ also clears the env vars and redirects the config file and cookie directory.
 Acceptance: after one `auth login --team row`, the full registration refresh runs with no
 username or password typed (an MFA code may still be asked for).
 
-## Open items
+## Decisions
 
 1. **`auth logout` and the cookie cache.** semotion-sync has no cache, so there is no
-   precedent. Proposed: logout also deletes that alias's cookie file, so "logged out" means
-   the tool can no longer act as that login.
-2. **Existing `~/.rems-sync/cookies.json`.** Proposed: ignore it (it expires within the hour);
-   the first run per alias logs in afresh.
+   precedent. Logout also deletes the cookie file of the alias's account, so "logged out"
+   means the tool can no longer act as that login. If another alias uses the same account,
+   its next run simply logs in afresh.
+2. **Existing `~/.rems-sync/cookies.json`.** Ignored (it expires within the hour); the first
+   run per account logs in afresh.
 3. **Breaking change.** Removing `--username`/`--password` and top-level `login` breaks
    existing commands and docs. README, `docs/auth.md`, `docs/deck-eval-upload.md` and the
-   script are updated in the same PR.
+   script are updated in the implementation PR.
+
+## Open items
+
+None.
