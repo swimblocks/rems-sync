@@ -151,7 +151,7 @@ Recorded?** for each. Sheet layout: [the meet roster sheet](sheets.md#the-meet-r
 | `--rems-club` | `ROW` | Only rows for this club. |
 | `--meet-name` | from the Meet tab | |
 | `--interactive` | off | Asks `y/n/q` before each evaluation (Enter skips, `q` stops). Without `--sheet-id`, asks which meet. |
-| `--recheck` | off | Checks rows already marked recorded against REMS, without writing ([what it reports](../explanation/deck-eval-upload.md#recheck-is-the-sheet-right)). With `--interactive`, offers to fix what it finds. |
+| `--recheck` | off | Checks all passed rows against REMS, including those marked recorded ([what it reports](../explanation/deck-eval-upload.md#recheck-is-the-sheet-right)). Without `--interactive`, leaves REMS unchanged but may add missing Provider/Recorded? columns to the sheet; add `--dry-run` to prevent sheet writes too. With `--interactive`, offers to fix what it finds. |
 | `--dry-run` | off | Does every read but doesn't record anything or write to the sheet. |
 | [REMS login](#rems-login) flags | | |
 
