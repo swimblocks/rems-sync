@@ -5,7 +5,7 @@ environment active. `--help` on any command prints its flags.
 
 | Command | Does |
 |---|---|
-| [`login`](#login) | Logs in to REMS and saves the session. |
+| [`auth login`, `auth status`, `auth logout`](#auth) | Save, list and remove REMS logins. |
 | [`refresh-members`](#refresh-members) | Exports a season's members from REMS. |
 | [`refresh-member-details`](#refresh-member-details) | Looks up each member's REMS identifiers. |
 | [`refresh-member-credentials`](#refresh-member-credentials) | Exports each member's credentials. |
@@ -15,29 +15,18 @@ environment active. `--help` on any command prints its flags.
 
 ## REMS login
 
-Commands that talk to REMS take:
+Every command that talks to REMS takes `--team <alias>` (required): the saved login to use.
+An alias is any label you chose when saving it with [`auth login`](#auth), such as `row`, or
+`row-referee` if you hold several REMS logins.
 
-| Flag | Environment variable | Meaning |
-|---|---|---|
-| `--username` | `REMS_USERNAME` | REMS username. |
-| `--password` | `REMS_PASSWORD` | REMS password. |
+| Environment variable | Meaning |
+|---|---|
+| `REMS_USERNAME` and `REMS_PASSWORD` | When **both** are set, used instead of the saved login, for that run. Setting only one is an error. |
 
-Prefer the environment variables, set once per terminal, so the password isn't in your shell
-history or on screen:
-
-```powershell
-$env:REMS_USERNAME = "<username>"
-$env:REMS_PASSWORD = Read-Host "REMS password"
-```
-
-```bash
-export REMS_USERNAME="<username>"
-read -rs -p "REMS password: " REMS_PASSWORD; export REMS_PASSWORD
-```
-
-Both may be left out while the saved session is still live. When a login is needed, REMS may
-email a six-digit code, and the command asks for it (`Please enter the MFA code`). The session
-is saved to `~/.rems-sync/cookies.json`. See [Logging in to REMS](../explanation/rems-login.md).
+When REMS needs a fresh login, it may email a six-digit code, and the command asks for it
+(`Please enter the MFA code`). The session is saved in the OS keychain under the alias and
+account, and reused while it lasts (about an hour). Where everything is kept:
+[Configuration](configuration.md). Why: [Saved logins](../explanation/saved-logins.md).
 
 ## Seasons
 
@@ -55,10 +44,19 @@ The refresh commands write to one of:
 
 The columns are in [Sheets and CSV files](sheets.md#the-registration-tabs).
 
-## `login`
+## `auth`
 
-Logs in (using the saved session if it is live) and saves the session. Flags: the
-[REMS login](#rems-login) flags.
+```
+auth login  --team <alias>
+auth status
+auth logout --team <alias>
+```
+
+| Command | Does |
+|---|---|
+| `auth login` | Asks for the REMS username (offering the saved one) and password (shown as `*`), logs in afresh, asking for the emailed code if REMS wants one, and saves the login and its session only if the login works. Replaces any login saved under the alias. |
+| `auth status` | Lists each alias and its username, and says if `REMS_USERNAME` and `REMS_PASSWORD` are overriding them. Exits 1 if nothing is saved or a saved password is missing from the keychain. |
+| `auth logout` | Removes the alias's session, password and username, in that order. Doesn't contact REMS. |
 
 ## `refresh-members`
 
@@ -68,7 +66,7 @@ Downloads REMS's members export for a season.
 |---|---|---|
 | `--season` | required | |
 | [Output](#output) flags | `--output csv` | Tab: `REMS Members`. |
-| [REMS login](#rems-login) flags | | |
+| `--team` | required | The [saved login](#rems-login). |
 
 ## `refresh-member-details`
 
@@ -85,7 +83,7 @@ and left out.
 |---|---|---|
 | `--season` | required | |
 | [Output](#output) flags | `--output csv` | Tab: `REMS Member Details`. |
-| [REMS login](#rems-login) flags | | |
+| `--team` | required | The [saved login](#rems-login). |
 
 ## `refresh-member-credentials`
 
@@ -98,7 +96,7 @@ For each row of the member details CSV, lists all the member's credentials.
 | Flag | Default | |
 |---|---|---|
 | [Output](#output) flags | `--output csv` | Tab: `REMS Member Credentials`. |
-| [REMS login](#rems-login) flags | | |
+| `--team` | required | The [saved login](#rems-login). |
 
 ## Upload commands
 
@@ -128,7 +126,7 @@ evaluations are recorded](../explanation/deck-eval-upload.md).
 | `--description` | required | Free text, e.g. `Session 6`. |
 | `--meet-dates` | optional | Every date of the meet, comma-separated. Default: Wednesday on or before `--date` to Sunday on or after it. |
 | `--dry-run` | | Does every read but doesn't record anything. |
-| [REMS login](#rems-login) flags | | |
+| `--team` | required | The [saved login](#rems-login). |
 
 Already recorded for this meet: says so and exits 0.
 
@@ -153,14 +151,13 @@ Recorded?** for each. Sheet layout: [the meet roster sheet](sheets.md#the-meet-r
 | `--interactive` | off | Asks `y/n/q` before each evaluation (Enter skips, `q` stops). Without `--sheet-id`, asks which meet. |
 | `--recheck` | off | Checks all passed rows against REMS, including those marked recorded ([what it reports](../explanation/deck-eval-upload.md#recheck-is-the-sheet-right)). Without `--interactive`, leaves REMS unchanged but may add missing Provider/Recorded? columns to the sheet; add `--dry-run` to prevent sheet writes too. With `--interactive`, offers to fix what it finds. |
 | `--dry-run` | off | Does every read but doesn't record anything or write to the sheet. |
-| [REMS login](#rems-login) flags | | |
+| `--team` | required | The [saved login](#rems-login). |
 
 ## Exit codes
 
 `0` on success. `1` on most errors, with a message starting `Error:`, or a Python traceback
-for an unexpected one such as a failed REMS login; `2` for a usage error such as a missing
+for an unexpected one; `2` for a usage error such as a missing
 required flag. Some errors are only printed, and the command still exits 0:
 
 - a refresh with `--output csv` but no `--output-file`, or `--output gsheet` but no `--sheet-id`;
 - `refresh-member-details` when its input has no REMS ID column or can't be read;
-- the upload commands when the sheet write fails (the message starts `Error uploading`).

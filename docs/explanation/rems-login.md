@@ -50,8 +50,15 @@ copies every hidden input from the form into its POST, so it needn't know their 
 
 ## The session cache
 
-After a successful login the whole cookie jar is saved as a flat name → value JSON object in
-`~/.rems-sync/cookies.json`, and loaded at the start of the next login. `logout()` deletes it.
+After a successful login the whole cookie jar is handed, as a flat name → value object, to the
+client's session store, and loaded from it at the start of the next login. `logout()` clears it.
+
+The CLI's store, `KeyringSessionStore` in [src/credentials.py](../../src/credentials.py), keeps
+it in the OS keychain under the alias and account, so a session is never used by another
+([Saved logins](saved-logins.md)). A store that refuses a write, such as Windows Credential
+Manager over its 2,560-byte limit, costs only a warning: the run carries on, and the next one
+logs in afresh. `auth login` uses an in-memory `MemorySessionStore`, and keeps the session only
+once the login itself is saved.
 
 ## Re-login when the session expires mid-run
 
