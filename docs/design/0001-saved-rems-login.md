@@ -19,7 +19,7 @@ doesn't: a session cache, kept in the keychain alongside the password.
 
 ### Constraints
 
-- REMS login has an **emailed MFA code** and a cookie cache ([auth.md](../auth.md)); semotion
+- REMS login has an **emailed MFA code** and a cookie cache ([Logging in to REMS](../explanation/rems-login.md)); semotion
   has neither. A saved password does not remove the MFA prompt; it removes the retyping. The
   session cache is what keeps MFA to roughly once an hour.
 - Tests and CI must never touch a real keychain.
