@@ -1,6 +1,6 @@
 # 0001 — Saved REMS logins in the OS keychain
 
-Status: accepted (issue #97)
+Status: implemented (issue #97, PR #99); locked
 
 ## Context
 
