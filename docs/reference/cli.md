@@ -124,7 +124,7 @@ evaluations are recorded](../explanation/deck-eval-upload.md).
 | `--position` | required | e.g. `Inspector of Turns`; friendly names are [translated](sheets.md#position-names). |
 | `--provider` | required | The evaluator's full name. |
 | `--meet` | required | The meet's name. |
-| `--date` | required | The session's date, `YYYY-MM-DD` or `MM/DD/YYYY`. |
+| `--date` | required | The session's date, `YYYY-MM-DD` or `DD/MM/YYYY` (day first). |
 | `--description` | required | Free text, e.g. `Session 6`. |
 | `--meet-dates` | optional | Every date of the meet, comma-separated. Default: Wednesday on or before `--date` to Sunday on or after it. |
 | `--dry-run` | | Does every read but doesn't record anything. |
