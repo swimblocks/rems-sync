@@ -200,7 +200,7 @@ def test_add_deck_eval_happy_path(mock_mfa, mock_client_class, runner):
     mock_client_class.return_value = mock_client
     mock_client.search_member_by_name.return_value = "685100"
     mock_client.get_member_details.return_value = {
-        'rems_id': 'SC24176410', 'member_id': '178722',
+        'rems_id': 'SC20333543', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
     # No existing IT evals → this will be #1
@@ -217,9 +217,9 @@ def test_add_deck_eval_happy_path(mock_mfa, mock_client_class, runner):
         'add-deck-eval',
         '--team', 'row',
         '--season', '2025-2026',
-        '--official-name', 'Chris Fletcher',
+        '--official-name', 'Michele Johnson',
         '--position', 'Inspector of Turns',
-        '--provider', 'Kaoru Yajima',
+        '--provider', 'Jim Lewis',
         '--meet', 'Cunningham Classic 2026',
         '--date', '2026-04-12',
         '--description', 'Session 6',
@@ -232,7 +232,7 @@ def test_add_deck_eval_happy_path(mock_mfa, mock_client_class, runner):
         member_id='178722',
         credential_id='452',
         type_id='127',
-        provider='Kaoru Yajima',
+        provider='Jim Lewis',
         provider_identifier='Cunningham Classic 2026',
         start_date='12/04/2026',  # d/m/Y per REMS form convention
         description='Session 6',
@@ -246,7 +246,7 @@ def test_add_deck_eval_promotes_to_second_eval(mock_mfa, mock_client_class, runn
     mock_client_class.return_value = mock_client
     mock_client.search_member_by_name.return_value = "685100"
     mock_client.get_member_details.return_value = {
-        'rems_id': 'SC24176410', 'member_id': '178722',
+        'rems_id': 'SC20333543', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
     # Existing #1 eval for IT → next is #2
@@ -263,9 +263,9 @@ def test_add_deck_eval_promotes_to_second_eval(mock_mfa, mock_client_class, runn
         'add-deck-eval',
         '--team', 'row',
         '--season', '2025-2026',
-        '--official-name', 'Chris Fletcher',
+        '--official-name', 'Michele Johnson',
         '--position', 'Inspector of Turns',
-        '--provider', 'Kaoru Yajima',
+        '--provider', 'Jim Lewis',
         '--meet', 'Cunningham Classic 2026',
         '--date', '2026-04-12',
         '--description', 'Session 6',
@@ -301,7 +301,7 @@ def _setup_chief_timer_existing(mock_client, existing_credentials):
     existing_credentials is the list returned by get_member_credentials (must include start_date)."""
     mock_client.search_member_by_name.return_value = "685100"
     mock_client.get_member_details.return_value = {
-        'rems_id': 'SC24176410', 'member_id': '178722',
+        'rems_id': 'SC20333543', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
     mock_client.get_member_credentials.return_value = existing_credentials
@@ -326,9 +326,9 @@ def test_add_deck_eval_already_recorded_matching_date(mock_mfa, mock_client_clas
         'add-deck-eval',
         '--team', 'row',
         '--season', '2025-2026',
-        '--official-name', 'Chris Fletcher',
+        '--official-name', 'Michele Johnson',
         '--position', 'Chief Timer',
-        '--provider', 'Kaoru Yajima',
+        '--provider', 'Jim Lewis',
         '--meet', 'Cunningham Classic 2026',
         '--date', '2026-04-12',
         '--description', 'Session 6',
@@ -347,7 +347,7 @@ def test_add_deck_eval_one_existing_same_date_is_duplicate(mock_mfa, mock_client
     mock_client_class.return_value = mock_client
     mock_client.search_member_by_name.return_value = "685100"
     mock_client.get_member_details.return_value = {
-        'rems_id': 'SC24176410', 'member_id': '178722',
+        'rems_id': 'SC20333543', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
     mock_client.get_member_credentials.return_value = [
@@ -362,9 +362,9 @@ def test_add_deck_eval_one_existing_same_date_is_duplicate(mock_mfa, mock_client
         'add-deck-eval',
         '--team', 'row',
         '--season', '2025-2026',
-        '--official-name', 'Chris Fletcher',
+        '--official-name', 'Michele Johnson',
         '--position', 'Chief Timer',
-        '--provider', 'Kaoru Yajima',
+        '--provider', 'Jim Lewis',
         '--meet', 'Cunningham Classic 2026',
         '--date', '2026-04-12',
         '--description', 'Session 6',
@@ -383,7 +383,7 @@ def test_add_deck_eval_one_existing_different_date_proceeds(mock_mfa, mock_clien
     mock_client_class.return_value = mock_client
     mock_client.search_member_by_name.return_value = "685100"
     mock_client.get_member_details.return_value = {
-        'rems_id': 'SC24176410', 'member_id': '178722',
+        'rems_id': 'SC20333543', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
     mock_client.get_member_credentials.return_value = [
@@ -399,9 +399,9 @@ def test_add_deck_eval_one_existing_different_date_proceeds(mock_mfa, mock_clien
         'add-deck-eval',
         '--team', 'row',
         '--season', '2025-2026',
-        '--official-name', 'Chris Fletcher',
+        '--official-name', 'Michele Johnson',
         '--position', 'Chief Timer',
-        '--provider', 'Kaoru Yajima',
+        '--provider', 'Jim Lewis',
         '--meet', 'Cunningham Classic 2026',
         '--date', '2026-04-12',
         '--description', 'Session 6',
@@ -421,7 +421,7 @@ def test_add_deck_eval_default_bracket_catches_adjacent_meet_day(mock_mfa, mock_
     mock_client_class.return_value = mock_client
     mock_client.search_member_by_name.return_value = "685100"
     mock_client.get_member_details.return_value = {
-        'rems_id': 'SC24176410', 'member_id': '178722',
+        'rems_id': 'SC20333543', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
     # Existing eval on Sat Apr 11 (mid-meet). User adds for Sun Apr 12 — same meet.
@@ -437,9 +437,9 @@ def test_add_deck_eval_default_bracket_catches_adjacent_meet_day(mock_mfa, mock_
         'add-deck-eval',
         '--team', 'row',
         '--season', '2025-2026',
-        '--official-name', 'Chris Fletcher',
+        '--official-name', 'Michele Johnson',
         '--position', 'Chief Timer',
-        '--provider', 'Kaoru Yajima',
+        '--provider', 'Jim Lewis',
         '--meet', 'Cunningham Classic 2026',
         '--date', '2026-04-12',  # Sun
         '--description', 'Session 6',
@@ -459,7 +459,7 @@ def test_add_deck_eval_meet_dates_flag_catches_other_session(mock_mfa, mock_clie
     mock_client_class.return_value = mock_client
     mock_client.search_member_by_name.return_value = "685100"
     mock_client.get_member_details.return_value = {
-        'rems_id': 'SC24176410', 'member_id': '178722',
+        'rems_id': 'SC20333543', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
     # Existing eval on Apr 11 — different session of the same meet (Apr 10-12).
@@ -476,9 +476,9 @@ def test_add_deck_eval_meet_dates_flag_catches_other_session(mock_mfa, mock_clie
         'add-deck-eval',
         '--team', 'row',
         '--season', '2025-2026',
-        '--official-name', 'Chris Fletcher',
+        '--official-name', 'Michele Johnson',
         '--position', 'Chief Timer',
-        '--provider', 'Kaoru Yajima',
+        '--provider', 'Jim Lewis',
         '--meet', 'Cunningham Classic 2026',
         '--date', '2026-04-12',
         '--description', 'Session 6',
@@ -504,9 +504,9 @@ def test_add_deck_eval_at_max_but_different_dates(mock_mfa, mock_client_class, r
         'add-deck-eval',
         '--team', 'row',
         '--season', '2025-2026',
-        '--official-name', 'Chris Fletcher',
+        '--official-name', 'Michele Johnson',
         '--position', 'Chief Timer',
-        '--provider', 'Kaoru Yajima',
+        '--provider', 'Jim Lewis',
         '--meet', 'Cunningham Classic 2026',
         '--date', '2026-04-12',
         '--description', 'Session 6',
@@ -525,7 +525,7 @@ def test_add_deck_eval_dry_run_does_reads_but_no_post(mock_mfa, mock_client_clas
     mock_client_class.return_value = mock_client
     mock_client.search_member_by_name.return_value = "685100"
     mock_client.get_member_details.return_value = {
-        'rems_id': 'SC24176410', 'member_id': '178722',
+        'rems_id': 'SC20333543', 'member_id': '178722',
         'member_season_id': '685100', 'season_id': 232,
     }
     mock_client.get_member_credentials.return_value = []
@@ -537,7 +537,7 @@ def test_add_deck_eval_dry_run_does_reads_but_no_post(mock_mfa, mock_client_clas
         'add-deck-eval',
         '--team', 'row',
         '--season', '2025-2026',
-        '--official-name', 'Chris Fletcher',
+        '--official-name', 'Michele Johnson',
         '--position', 'Inspector of Turns',
         '--provider', 'p', '--meet', 'm', '--date', '2026-04-12', '--description', 'd',
         '--dry-run',

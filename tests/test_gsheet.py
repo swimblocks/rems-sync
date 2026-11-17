@@ -64,7 +64,7 @@ def test_read_sheet_tab_returns_dataframe():
     mock_worksheet = MagicMock()
     mock_worksheet.get_all_values.return_value = [
         ['Official Name', 'Official Position', 'Deck Eval Success?'],
-        ['Chris Fletcher', 'Inspector of Turns', 'TRUE'],
+        ['Michele Johnson', 'Inspector of Turns', 'TRUE'],
         ['Jane Doe', 'Starter', 'FALSE'],
     ]
     client = _mock_client_with_worksheet(mock_worksheet)
@@ -73,7 +73,7 @@ def test_read_sheet_tab_returns_dataframe():
 
     assert list(df.columns) == ['Official Name', 'Official Position', 'Deck Eval Success?']
     assert len(df) == 2
-    assert df.iloc[0]['Official Name'] == 'Chris Fletcher'
+    assert df.iloc[0]['Official Name'] == 'Michele Johnson'
 
 
 def test_read_sheet_tab_empty():
@@ -264,7 +264,7 @@ def test_parse_grid_session_dates_extracts_from_multiline_headers():
          'Session 2\nSaturday, Apr 11\nSenior Briefing: 6:55 am',
          'Session 6\nSunday, Apr 12\nSenior Briefing: 9:25 am',
          ''],
-        ['', 'Meet Manager', '', 'Mike Hui', 'Mike Hui', 'Mike Hui (DE)', ''],
+        ['', 'Meet Manager', '', 'Bruce Snow', 'Bruce Snow', 'Bruce Snow (DE)', ''],
     ]
     dates = parse_grid_session_dates(rows, year=2026)
     assert dates == {
@@ -285,13 +285,13 @@ def test_parse_officials_name_to_rems_id():
         ['', '', '', '', '', '', '', '', '', '', '', '', '', '', 'Session 1'],
         ['Form indicates available', 'Form name invalid', 'Email from Form',
          'Name', 'Form Resp. Timestamp', 'REMS ID', 'ROW Acct'],
-        ['TRUE', 'FALSE', 'a@b.com', 'Gavin Bee', '2026-03-23 22:58:56', 'SC24176394', ''],
-        ['TRUE', 'FALSE', 'c@d.com', 'Janpreet', '2026-03-24 08:00:00', 'SC11112222', ''],
+        ['TRUE', 'FALSE', 'a@b.com', 'Michael Mitchell', '2026-03-23 22:58:56', 'SC57005447', ''],
+        ['TRUE', 'FALSE', 'c@d.com', 'Jasmine', '2026-03-24 08:00:00', 'SC11112222', ''],
         ['TRUE', 'FALSE', 'e@f.com', '', '2026-03-25 08:00:00', 'SC99998888', ''],   # no name → skip
         ['TRUE', 'FALSE', 'g@h.com', 'Missing REMS', '2026-03-26 08:00:00', '', ''],  # no rems → skip
     ]
     m = parse_officials_name_to_rems_id(rows)
-    assert m == {'Gavin Bee': 'SC24176394', 'Janpreet': 'SC11112222'}
+    assert m == {'Michael Mitchell': 'SC57005447', 'Jasmine': 'SC11112222'}
 
 
 def test_parse_officials_name_to_rems_id_no_header_raises():

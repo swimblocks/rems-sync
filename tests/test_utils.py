@@ -32,7 +32,7 @@ def test_parse_season_to_id_invalid_input():
 
 def test_validate_rems_id():
     from src.utils import validate_rems_id
-    assert validate_rems_id("SC24074099") is True
+    assert validate_rems_id("SC18672248") is True
     assert validate_rems_id("SC12345678") is True
     assert validate_rems_id("SC1234567") is False # too short
     assert validate_rems_id("AB12345678") is False # wrong prefix

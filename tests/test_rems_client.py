@@ -548,7 +548,7 @@ def test_search_member_by_name_unique(rems_client):
         status=200,
     )
 
-    member_season_id = rems_client.search_member_by_name("Chris Fletcher", season_id)
+    member_season_id = rems_client.search_member_by_name("Michele Johnson", season_id)
     assert member_season_id == "789"
 
 @responses.activate
@@ -660,7 +660,7 @@ def test_get_member_credential_details(rems_client):
       <input id="start-date" value="12/04/2026" />
       <input id="expiry-date" value="" />
       <input id="description" value="Session 6" />
-      <input id="provider" value="Kaoru Yajima" />
+      <input id="provider" value="Jim Lewis" />
       <input id="provider-identifier" value="Cunningham Classic 2026" />
     </form>
     """
@@ -672,7 +672,7 @@ def test_get_member_credential_details(rems_client):
     )
     details = rems_client.get_member_credential_details(member_season_id, member_id, credential_id)
     assert details['name'] == 'Chief Timekeeper Evaluation #2'
-    assert details['provider'] == 'Kaoru Yajima'
+    assert details['provider'] == 'Jim Lewis'
     assert details['provider_identifier'] == 'Cunningham Classic 2026'
     assert details['description'] == 'Session 6'
     assert details['start_date'] == '12/04/2026'
@@ -695,7 +695,7 @@ def test_update_member_credential_overrides_start_date(rems_client):
       <select name="state"><option value="80" selected>Active</option></select>
       <input name="start_date" value="04/11/2025" />
       <input name="expiry_date" value="" />
-      <input name="provider" value="Kaoru Yajima" />
+      <input name="provider" value="Jim Lewis" />
     </form>
     """
     responses.add(responses.GET, edit_url, body=html, status=200)
@@ -717,7 +717,7 @@ def test_update_member_credential_overrides_start_date(rems_client):
     # Start date was overridden; the rest of the form survived intact.
     assert captured["start_date"] == ["11/04/2025"]
     assert captured["_csrf"] == ["abc123"]
-    assert captured["provider"] == ["Kaoru Yajima"]
+    assert captured["provider"] == ["Jim Lewis"]
     assert captured["state"] == ["80"]
 
 
@@ -833,7 +833,7 @@ def test_add_member_credential_success(rems_client):
         member_id=member_id,
         credential_id=452,
         type_id=127,
-        provider="Kaoru Yajima",
+        provider="Jim Lewis",
         provider_identifier="Cunningham Classic 2026",
         start_date="04/12/2026",
         description="Session 6",
