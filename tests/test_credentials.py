@@ -12,6 +12,19 @@ from src.credentials import KeyringSessionStore, Login, NotLoggedInError
 
 # --- Logins (as semotion-sync) ---------------------------------------------------------------
 
+def test_season_sheet_ids_come_from_the_sheets_table():
+    assert credentials.season_sheet_ids() == {}
+    credentials._write_config({"sheets": {"2026-2027": "sheet-a"}})
+    assert credentials.season_sheet_ids() == {"2026-2027": "sheet-a"}
+
+
+def test_saving_and_deleting_logins_keeps_the_sheets_table():
+    credentials._write_config({"sheets": {"2026-2027": "sheet-a"}})
+    credentials.save_login("row", Login("auto@example.org", "s3cret"))
+    credentials.delete_login("row")
+    assert credentials.season_sheet_ids() == {"2026-2027": "sheet-a"}
+
+
 def test_save_then_load_round_trips():
     credentials.save_login("clubone", Login("auto@example.org", "s3cret"))
     assert credentials.load_login("clubone") == Login("auto@example.org", "s3cret")

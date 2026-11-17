@@ -20,7 +20,11 @@
     Season to refresh, e.g. 2026-2027.
 
 .PARAMETER SheetId
-    Google Sheet ID of the season's registration sheet.
+    Google Sheet ID of the season's registration sheet. Defaults to the season's entry in the
+    [sheets] table of rems-sync's config.toml (the file `auth login` writes), e.g.
+        [sheets]
+        "2026-2027" = "<sheet_id>"
+    Sheet IDs live there rather than in this public repo.
 
 .PARAMETER OutDir
     Where to write the CSVs. Defaults to a new timestamped folder under
@@ -31,13 +35,13 @@
     terraform/terraform.tfvars.
 
 .EXAMPLE
-    .\scripts\refresh-registration.ps1 -Team row -Season 2026-2027 -SheetId <sheet_id>
+    .\scripts\refresh-registration.ps1 -Team row -Season 2026-2027
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Team,
     [Parameter(Mandatory)][string]$Season,
-    [Parameter(Mandatory)][string]$SheetId,
+    [string]$SheetId,
     [string]$OutDir,
     [string]$ServiceAccount
 )
@@ -48,6 +52,21 @@ $Python = Join-Path $RepoRoot '.venv\Scripts\python.exe'
 
 if (-not (Test-Path $Python)) { throw "No virtualenv at $Python. See README Quick start." }
 if (-not (Get-Command gcloud -ErrorAction SilentlyContinue)) { throw "gcloud not found on PATH." }
+
+if (-not $SheetId) {
+    Push-Location $RepoRoot
+    try {
+        $lookup = "import sys; from src.credentials import config_file, season_sheet_ids; " +
+                  "print(season_sheet_ids().get(sys.argv[1], '')); print(config_file())"
+        $SheetId, $configFile = & $Python -c $lookup $Season
+        if ($LASTEXITCODE -ne 0) { throw "Could not read the rems-sync config file." }
+    }
+    finally { Pop-Location }
+    if (-not $SheetId) {
+        throw "No sheet for season $Season. Pass -SheetId, or add it to ${configFile}:`n[sheets]`n`"$Season`" = `"<sheet_id>`""
+    }
+    Write-Host "Using sheet $SheetId for $Season (from $configFile)"
+}
 
 if (-not $ServiceAccount) {
     $tfvars = Join-Path $RepoRoot 'terraform\terraform.tfvars'

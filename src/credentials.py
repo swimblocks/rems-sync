@@ -70,6 +70,15 @@ def saved_usernames() -> dict[str, str]:
     return {alias: team["username"] for alias, team in _read_config().get("teams", {}).items()}
 
 
+def season_sheet_ids() -> dict[str, str]:
+    """The registration sheet ID for each season, from the config file's [sheets] table.
+
+    Kept here, outside the repo, because the repo is public. Read by
+    scripts/refresh-registration.ps1 so it needs no -SheetId.
+    """
+    return dict(_read_config().get("sheets", {}))
+
+
 def _forget(service: str, username: str) -> None:
     """Remove a keychain entry; an entry that is already gone is not an error."""
     try:
