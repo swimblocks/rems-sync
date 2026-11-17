@@ -46,10 +46,35 @@ Everything below is **repo-specific** — quirks that the canonical guide doesn'
   or fix swapped dates/providers. Read [docs/deck-eval-upload.md](docs/deck-eval-upload.md)
   before touching that flow.
 
+## Running rems-sync
+
+The org rule on
+[acting in the author's name](https://github.com/swimblocks/.github/blob/main/AGENTS.md#acting-in-the-authors-name)
+applies to rems-sync's own commands. Which of them you may run without asking:
+
+| Command | You may run it |
+|---|---|
+| `auth status` | Yes. It only reads. |
+| `auth login`, `auth logout` | Only when asked. They change the saved login, and `auth login` needs the person to type the password and an MFA code. |
+| `refresh-members`, `refresh-member-details`, `refresh-member-credentials` with `--output csv` to a temporary file | Yes, when the task needs the data. See below. Any REMS command may stop for an MFA code once the saved session has expired. |
+| The same with `--output gsheet` | Only when asked for that run. It replaces a tab other people read. |
+| `upload-members`, `upload-member-details`, `upload-member-credentials` | Only when asked for that run. They replace a tab other people read. |
+| `upload-deck-evals --recheck` (without `--interactive`) | Yes. It only compares REMS with the sheet. |
+| `upload-deck-evals`, `upload-deck-evals --recheck --interactive`, `add-deck-eval` | Only when asked for that run. They record or change deck evaluations in REMS. |
+| `scripts/refresh-registration.ps1` | Only when asked for that run. It runs a Google sign-in and replaces three tabs of the season's registration sheet. |
+
+REMS data is personal information wherever it lands. When a task needs a CSV:
+
+- Write it to a temporary location outside any repository.
+- Read only what the task needs from it. Keep names, emails and REMS IDs out of issues,
+  pull requests, commits and logs, and out of chat unless the person explicitly asks for
+  them; counts and field names are fine.
+- Delete it as soon as the task is done with it.
+
 ## Where to start reading
 
 - [`README.md`](README.md) — user-facing CLI overview
 - [`src/main.py`](src/main.py) — all Click commands live here
 - [`src/rems_client.py`](src/rems_client.py) — REMS HTTP client
 - [`src/gsheet.py`](src/gsheet.py) — Google Sheets / Drive helpers
-- [`tests/`](tests/) — `pytest -q` runs the full suite (~157 tests today)
+- [`tests/`](tests/) — `pytest -q` runs the full suite (~162 tests today)
