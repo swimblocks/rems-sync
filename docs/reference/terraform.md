@@ -1,7 +1,7 @@
 # Terraform
 
 The configuration in [`terraform/`](../../terraform/) sets up the Google Cloud project rems-sync
-uses. Steps: [Set up the cloud project](../how-to/set-up-the-cloud-project.md).
+uses. Steps: [the cloud setup playbook](../playbooks/cloud-setup.md).
 
 ## Variables
 

@@ -21,8 +21,14 @@ Step by step, for a goal.
 - [Record one deck evaluation](how-to/add-a-deck-eval.md), without a sheet.
 - [Set up Google access](how-to/set-up-google-access.md): share sheets and sign in as the
   service account.
-- [Set up the cloud project](how-to/set-up-the-cloud-project.md), once, with Terraform.
 - For contributors: [add a position name](how-to/contributor/add-a-position-name.md).
+
+## Playbooks
+
+The operator's procedures, for whoever looks after the Google Cloud project.
+
+- [Cloud setup](playbooks/cloud-setup.md): the project and the `rems-sync-sa` service account,
+  once, with Terraform.
 
 ## Reference
 

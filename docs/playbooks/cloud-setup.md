@@ -1,8 +1,8 @@
-# Set up the cloud project
+# Playbook: cloud setup
 
 Create the Google Cloud project and the `rems-sync-sa` service account, once. Someone in your
 club may already have done this; if so, ask them for the service account's email and skip to
-[Set up Google access](set-up-google-access.md). What the Terraform creates is in the
+[Set up Google access](../how-to/set-up-google-access.md). What the Terraform creates is in the
 [Terraform reference](../reference/terraform.md).
 
 You need [Terraform](https://developer.hashicorp.com/terraform/install) and the
@@ -34,4 +34,4 @@ create projects.
    service_account_email = "rems-sync-sa@<project_id>.iam.gserviceaccount.com"
    ```
 
-Next: [Set up Google access](set-up-google-access.md).
+Next: [Set up Google access](../how-to/set-up-google-access.md).

@@ -4,7 +4,7 @@ Let rems-sync read and write your sheets, as the `rems-sync-sa` service account.
 this way: [Google access](../explanation/google-access.md).
 
 You need the Google Cloud CLI, the service account's email (from
-[Set up the cloud project](set-up-the-cloud-project.md)), and the right to impersonate it.
+[the cloud setup playbook](../playbooks/cloud-setup.md)), and the right to impersonate it.
 
 1. **Share each sheet** rems-sync writes to (the season's registration sheet, the meet roster
    sheets, or the Drive folder holding them) with the service account's email, as Editor.

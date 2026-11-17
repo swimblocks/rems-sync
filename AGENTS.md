@@ -51,8 +51,11 @@ page its change makes wrong.
 - **Tutorials** ([`docs/tutorials/`](docs/tutorials/)): a newcomer's first run. A PR that
   changes setup, login or the commands it uses updates it.
 - **How-to guides** ([`docs/how-to/`](docs/how-to/)): step by step, for a goal: the season
-  refresh, deck evaluations, Google access, the cloud project; contributor guides under
-  `how-to/contributor/`. A PR that changes a step updates its guide.
+  refresh, deck evaluations, Google access; contributor guides under `how-to/contributor/`.
+  A PR that changes a step updates its guide.
+- **Playbooks** ([`docs/playbooks/`](docs/playbooks/)): the operator's procedures for the
+  Google Cloud project: cloud setup. A PR that changes what they rely on (Terraform, roles,
+  commands) updates them. Playbooks are not how-to guides.
 - **Reference** ([`docs/reference/`](docs/reference/)): the facts: the CLI (every command,
   flag, default and exit code), sheets and CSV files (tabs, columns, roster layout, position
   names), REMS (URLs, cookies, values), Terraform, code layout. A PR that changes one of those

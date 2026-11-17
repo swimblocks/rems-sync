@@ -9,7 +9,7 @@ You'll need:
 - the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install);
 - your REMS login for your club's officials, and access to its email for the login code;
 - a Google Sheet you can edit, to practise on, and the `rems-sync-sa` service account's email
-  from whoever [set up the cloud project](../how-to/set-up-the-cloud-project.md).
+  from whoever [set up the cloud project](../playbooks/cloud-setup.md).
 
 ## 1. Install
 
