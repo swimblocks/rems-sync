@@ -339,7 +339,7 @@ class REMSClient:
 
     def search_member_by_name(self, name, season_id):
         """
-        Search for a member by full name (e.g. "Michele Johnson") in the given season.
+        Search for a member by full name in the given season.
         Returns the member_season_id of the unique match, or None if not found.
         Raises an exception if multiple members match.
         """
