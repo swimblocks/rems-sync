@@ -78,7 +78,8 @@ if (-not $ServiceAccount) {
 if (-not $OutDir) {
     $OutDir = Join-Path $HOME "Downloads\rems-sync\$Season\$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 }
-New-Item -ItemType Directory -Force $OutDir | Out-Null
+# Absolute, because the CLI steps run from the repo root (Push-Location below), not the caller's directory.
+$OutDir = (New-Item -ItemType Directory -Force $OutDir).FullName
 $Members     = Join-Path $OutDir 'members.csv'
 $Details     = Join-Path $OutDir 'member_details.csv'
 $Credentials = Join-Path $OutDir 'credentials.csv'

@@ -175,6 +175,24 @@ def test_upload_member_credentials(mock_write_df, mock_get_client, runner, tmp_p
     mock_write_df.assert_called_once()
 
 
+@pytest.mark.parametrize("command, label", [
+    ("upload-members", "members"),
+    ("upload-member-details", "member details"),
+    ("upload-member-credentials", "member credentials"),
+])
+@patch('src.main.get_gspread_client')
+@patch('src.main.write_df_to_sheet', side_effect=RuntimeError("permission denied"))
+def test_upload_failure_exits_nonzero(mock_write_df, mock_get_client, runner, tmp_path, command, label):
+    # The refresh script stops on a nonzero exit; a swallowed upload error would let it report success.
+    input_file = tmp_path / "input.csv"
+    input_file.write_text("col1\nval1")
+
+    result = runner.invoke(cli, [command, '--input-file', str(input_file), '--sheet-id', 'test-sheet-id'])
+
+    assert result.exit_code == 1
+    assert f"Could not upload {label}: permission denied" in result.output
+
+
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
 def test_add_deck_eval_happy_path(mock_mfa, mock_client_class, runner):

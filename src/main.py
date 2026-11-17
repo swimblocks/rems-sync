@@ -639,7 +639,7 @@ def upload_members(input_file, sheet_id, sheet_name):
         gsheet_client = get_gspread_client()
         write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
     except Exception as e:
-        click.echo(f"Error uploading members: {e}", err=True)
+        raise click.ClickException(f"Could not upload members: {e}") from e
 
 @cli.command()
 @click.option('--input-file', type=click.Path(exists=True), required=True, help='The CSV file to upload.')
@@ -653,7 +653,7 @@ def upload_member_details(input_file, sheet_id, sheet_name):
         gsheet_client = get_gspread_client()
         write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
     except Exception as e:
-        click.echo(f"Error uploading member details: {e}", err=True)
+        raise click.ClickException(f"Could not upload member details: {e}") from e
 
 @cli.command()
 @click.option('--input-file', type=click.Path(exists=True), required=True, help='The CSV file to upload.')
@@ -667,7 +667,7 @@ def upload_member_credentials(input_file, sheet_id, sheet_name):
         gsheet_client = get_gspread_client()
         write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
     except Exception as e:
-        click.echo(f"Error uploading member credentials: {e}", err=True)
+        raise click.ClickException(f"Could not upload member credentials: {e}") from e
 
 
 @cli.command()
