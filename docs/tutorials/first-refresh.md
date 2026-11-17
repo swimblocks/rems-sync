@@ -25,30 +25,27 @@ python -m src.main --help
 The last command lists rems-sync's commands. Every command in this tutorial runs from this
 folder with the environment active.
 
-## 2. Log in to REMS
-
-Give this terminal your REMS login, so later commands can log in again when they need to:
-
-```powershell
-$env:REMS_USERNAME = "<your REMS username>"
-$env:REMS_PASSWORD = Read-Host "REMS password"
-```
-
-(In bash, see [REMS login](../reference/cli.md#rems-login).)
-
-Then log in:
+## 2. Save your REMS login
 
 ```bash
-python -m src.main login
+python -m src.main auth login --team row
 ```
 
-It asks for the six-digit code REMS emails you, and prints `Login successful`. The session is saved, so for the next hour the other commands won't ask
-again.
+`row` is the alias you'll use to name this login; pick your club's. Enter your REMS username and
+password (it shows `*` as you type), then the six-digit code REMS emails you. It prints
+`Logged in to REMS as <username>; saved as 'row'`. The password is now in your OS keychain, and
+the REMS session with it, so for the next hour the other commands won't ask for a code.
+
+Check it:
+
+```bash
+python -m src.main auth status
+```
 
 ## 3. Pull this season's members
 
 ```bash
-python -m src.main refresh-members --season 2026-2027 --output csv --output-file members.csv
+python -m src.main refresh-members --team row --season 2026-2027 --output csv --output-file members.csv
 ```
 
 It prints `Using cached REMS session (MFA skipped)`: the session from step 2 at work. Open
@@ -85,8 +82,10 @@ like.
 
 ## What you've done
 
-You've logged in to REMS once and reused the session, pulled data out of REMS to a file, and
+You've saved a REMS login and reused its session, pulled data out of REMS to a file, and
 written it to a sheet as the service account. The full season refresh is the same pattern with
-two more steps: [Refresh a season's registration sheet](../how-to/refresh-registration-sheet.md).
-For how the pieces fit, read [Logging in to REMS](../explanation/rems-login.md) and
+two more steps, and on Windows one script does it all:
+[Refresh a season's registration sheet](../how-to/refresh-registration-sheet.md).
+For how the pieces fit, read [Saved logins](../explanation/saved-logins.md),
+[Logging in to REMS](../explanation/rems-login.md) and
 [Google access](../explanation/google-access.md).

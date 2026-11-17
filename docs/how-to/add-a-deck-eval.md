@@ -3,13 +3,12 @@
 Record a single deck evaluation in REMS, without a roster sheet. All the flags:
 [`add-deck-eval`](../reference/cli.md#add-deck-eval).
 
-You need your REMS login in `REMS_USERNAME` and `REMS_PASSWORD` ([how](../reference/cli.md#rems-login))
-and, ideally, the official's REMS ID: a search by name can match the
+You need a [saved REMS login](manage-saved-logins.md), such as `row`, and, ideally, the official's REMS ID: a search by name can match the
 wrong person or no one.
 
 1. **Rehearse** with `--dry-run`:
    ```bash
-   python -m src.main add-deck-eval --season 2025-2026 \
+   python -m src.main add-deck-eval --team row --season 2025-2026 \
      --official-name "<official's full name>" --rems-id <REMS ID> \
      --position "Chief Timer" --provider "<evaluator's full name>" \
      --meet "<meet name>" --date 2026-04-12 --description "Session 6" \

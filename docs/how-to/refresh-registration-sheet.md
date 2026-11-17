@@ -3,41 +3,55 @@
 Bring the season's Officials Registration sheet up to date from REMS: its three REMS tabs,
 **REMS Members**, **REMS Member Details** and **REMS Member Credentials**.
 
-You need [Google access](set-up-google-access.md) to the sheet, your REMS login, the season (for
-example `2026-2027`) and the sheet's ID: the part of its URL between `/d/` and `/edit`.
+You need:
 
-Each step writes a CSV, which the next step reads, so a failure part-way doesn't touch the
-sheet, and a step can be rerun on its own.
+- a [saved REMS login](manage-saved-logins.md), such as `row`;
+- the season's sheet shared with the service account ([Google access](set-up-google-access.md));
+- the sheet's ID: the part of its URL between `/d/` and `/edit`.
 
-0. **Give the terminal your REMS login** ([how](../reference/cli.md#rems-login)), so each
-   command can log in when it needs to:
+## With the script (Windows)
+
+1. **Once per season, record the sheet** in your [`config.toml`](../reference/configuration.md#configtoml):
+   ```toml
+   [sheets]
+   "2026-2027" = "<sheet_id>"
+   ```
+2. **Run it:**
    ```powershell
-   $env:REMS_USERNAME = "<your REMS username>"
-   $env:REMS_PASSWORD = Read-Host "REMS password"
+   .\scripts\refresh-registration.ps1 -Team row -Season 2026-2027
    ```
-1. **Members.** Expect a prompt for the REMS code if you haven't logged in within the hour.
+   A browser opens for the Google sign-in. REMS may ask for its emailed code. Member details
+   take a few minutes for a large club.
+3. **Check** it ended with `Done. CSVs are in …`. If a step failed, the script stopped there
+   and said which; the sheet's tabs before that step were already replaced.
+4. **Delete the CSV folder** it names. The files hold members' personal details.
+
+What the script does, and its other parameters: [`refresh-registration.ps1`](../reference/refresh-registration-script.md).
+
+## By hand
+
+The same steps, one command at a time, on any OS. Each refresh writes a CSV, which the next one
+reads, so a step can be rerun on its own.
+
+1. Sign in to Google as the service account ([how](set-up-google-access.md)).
+2. **Members:**
    ```bash
-   python -m src.main refresh-members --season 2026-2027 --output csv --output-file members.csv
+   python -m src.main refresh-members --team row --season 2026-2027 --output csv --output-file members.csv
    ```
-2. **Member details.** One REMS request per member; a few minutes for a large club.
+3. **Member details:**
    ```bash
-   python -m src.main refresh-member-details members.csv --season 2026-2027 \
+   python -m src.main refresh-member-details members.csv --team row --season 2026-2027 \
      --output csv --output-file member_details.csv
    ```
-3. **Credentials.**
+4. **Credentials:**
    ```bash
-   python -m src.main refresh-member-credentials member_details.csv \
+   python -m src.main refresh-member-credentials member_details.csv --team row \
      --output csv --output-file credentials.csv
    ```
-4. **Upload all three** to the sheet. Each replaces its tab.
+5. **Upload all three.** Each replaces its tab.
    ```bash
    python -m src.main upload-members --input-file members.csv --sheet-id <sheet_id>
    python -m src.main upload-member-details --input-file member_details.csv --sheet-id <sheet_id>
    python -m src.main upload-member-credentials --input-file credentials.csv --sheet-id <sheet_id>
    ```
-5. **Check** that each upload printed `Successfully wrote data to sheet`. An upload that prints
-   `Error uploading …` failed, even though it exits normally.
-6. **Delete the CSV files.** They hold members' personal details.
-
-To write straight to the sheet instead of via CSV, give a refresh command
-`--output gsheet --sheet-id <sheet_id>`; the next step still needs the CSV, though.
+6. **Delete the CSV files.**
