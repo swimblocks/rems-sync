@@ -1080,8 +1080,8 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
 @cli.command()
 @team_option
 @click.option('--season', required=True, help='The season (e.g. "2025-2026").')
-@click.option('--official-name', required=True, help='Official\'s full name, e.g. "Chris Fletcher".')
-@click.option('--rems-id', default=None, help='REMS ID (e.g. SC24176410); if given, used instead of name search.')
+@click.option('--official-name', required=True, help='Official\'s full name, as in REMS.')
+@click.option('--rems-id', default=None, help='REMS ID (SC followed by 8 or more digits); if given, used instead of name search.')
 @click.option('--position', required=True, help='Official position, e.g. "Inspector of Turns".')
 @click.option('--provider', required=True, help='Full name of the evaluator (Deck Eval Provider).')
 @click.option('--meet', required=True, help='Meet name; submitted as provider_identifier.')
