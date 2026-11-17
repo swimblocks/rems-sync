@@ -16,6 +16,8 @@ Step by step, for a goal.
 
 - [Refresh a season's registration sheet](how-to/refresh-registration-sheet.md): members,
   details and credentials, from REMS to the season's sheet.
+- [Manage saved logins](how-to/manage-saved-logins.md): save, check, change and remove REMS
+  logins.
 - [Upload a meet's deck evaluations](how-to/upload-deck-evals.md), and check a meet or season
   against REMS.
 - [Record one deck evaluation](how-to/add-a-deck-eval.md), without a sheet.
@@ -38,6 +40,10 @@ The facts, to look up.
 - [Sheets and CSV files](reference/sheets.md): the tabs and columns read and written, the meet
   roster layout, and position names.
 - [REMS](reference/rems.md): the login hops, cookies, URLs and values rems-sync relies on.
+- [Configuration](reference/configuration.md): `config.toml`, the keychain entries and the
+  environment variables.
+- [`refresh-registration.ps1`](reference/refresh-registration-script.md): the season refresh
+  script's parameters and steps.
 - [Terraform](reference/terraform.md): variables, resources and outputs.
 - [Code layout](reference/code-layout.md): where things are.
 
@@ -47,6 +53,8 @@ Why it is the way it is.
 
 - [Logging in to REMS](explanation/rems-login.md): the session cache, the probe, the one-time
   code, and the failures that shaped them.
+- [Saved logins](explanation/saved-logins.md): aliases, the keychain, and why a session never
+  crosses accounts.
 - [How deck evaluations are recorded](explanation/deck-eval-upload.md): #1 or #2, never
   twice, recheck.
 - [Google access](explanation/google-access.md): Application Default Credentials and the
