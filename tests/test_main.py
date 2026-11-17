@@ -6,6 +6,8 @@ from click.testing import CliRunner
 
 from src.main import cli
 
+pytestmark = pytest.mark.usefixtures("saved_row_login")
+
 
 @pytest.fixture
 def runner():
@@ -22,8 +24,7 @@ def test_refresh_members_csv(mock_mfa, mock_client_class, runner, tmp_path):
 
     result = runner.invoke(cli, [
         'refresh-members',
-        '--username', 'testuser',
-        '--password', 'testpass',
+        '--team', 'row',
         '--season', '2025',
         '--output', 'csv',
         '--output-file', str(output_file)
@@ -42,8 +43,7 @@ def test_refresh_members_csv_missing_file(mock_mfa, mock_client_class, runner):
 
     result = runner.invoke(cli, [
         'refresh-members',
-        '--username', 'testuser',
-        '--password', 'testpass',
+        '--team', 'row',
         '--season', '2025',
         '--output', 'csv'
     ])
@@ -71,8 +71,7 @@ def test_refresh_member_details_csv(mock_mfa, mock_client_class, runner, tmp_pat
 
     result = runner.invoke(cli, [
         'refresh-member-details',
-        '--username', 'testuser',
-        '--password', 'testpass',
+        '--team', 'row',
         '--season', '2025',
         '--output', 'csv',
         '--output-file', str(output_file),
@@ -90,8 +89,7 @@ def test_refresh_member_details_missing_col(runner, tmp_path):
 
     result = runner.invoke(cli, [
         'refresh-member-details',
-        '--username', 'testuser',
-        '--password', 'testpass',
+        '--team', 'row',
         '--season', '2025',
         str(input_file)
     ])
@@ -115,8 +113,7 @@ def test_refresh_member_credentials_csv(mock_mfa, mock_client_class, runner, tmp
 
     result = runner.invoke(cli, [
         'refresh-member-credentials',
-        '--username', 'testuser',
-        '--password', 'testpass',
+        '--team', 'row',
         '--output', 'csv',
         '--output-file', str(output_file),
         str(details_file)
@@ -200,7 +197,7 @@ def test_add_deck_eval_happy_path(mock_mfa, mock_client_class, runner):
 
     result = runner.invoke(cli, [
         'add-deck-eval',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--official-name', 'Chris Fletcher',
         '--position', 'Inspector of Turns',
@@ -246,7 +243,7 @@ def test_add_deck_eval_promotes_to_second_eval(mock_mfa, mock_client_class, runn
 
     result = runner.invoke(cli, [
         'add-deck-eval',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--official-name', 'Chris Fletcher',
         '--position', 'Inspector of Turns',
@@ -270,7 +267,7 @@ def test_add_deck_eval_member_not_found(mock_mfa, mock_client_class, runner):
 
     result = runner.invoke(cli, [
         'add-deck-eval',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--official-name', 'Nobody Here',
         '--position', 'Starter',
@@ -309,7 +306,7 @@ def test_add_deck_eval_already_recorded_matching_date(mock_mfa, mock_client_clas
 
     result = runner.invoke(cli, [
         'add-deck-eval',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--official-name', 'Chris Fletcher',
         '--position', 'Chief Timer',
@@ -345,7 +342,7 @@ def test_add_deck_eval_one_existing_same_date_is_duplicate(mock_mfa, mock_client
 
     result = runner.invoke(cli, [
         'add-deck-eval',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--official-name', 'Chris Fletcher',
         '--position', 'Chief Timer',
@@ -382,7 +379,7 @@ def test_add_deck_eval_one_existing_different_date_proceeds(mock_mfa, mock_clien
 
     result = runner.invoke(cli, [
         'add-deck-eval',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--official-name', 'Chris Fletcher',
         '--position', 'Chief Timer',
@@ -420,7 +417,7 @@ def test_add_deck_eval_default_bracket_catches_adjacent_meet_day(mock_mfa, mock_
 
     result = runner.invoke(cli, [
         'add-deck-eval',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--official-name', 'Chris Fletcher',
         '--position', 'Chief Timer',
@@ -459,7 +456,7 @@ def test_add_deck_eval_meet_dates_flag_catches_other_session(mock_mfa, mock_clie
     # User is trying to add on Apr 12, but provides --meet-dates covering the whole meet.
     result = runner.invoke(cli, [
         'add-deck-eval',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--official-name', 'Chris Fletcher',
         '--position', 'Chief Timer',
@@ -487,7 +484,7 @@ def test_add_deck_eval_at_max_but_different_dates(mock_mfa, mock_client_class, r
 
     result = runner.invoke(cli, [
         'add-deck-eval',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--official-name', 'Chris Fletcher',
         '--position', 'Chief Timer',
@@ -520,7 +517,7 @@ def test_add_deck_eval_dry_run_does_reads_but_no_post(mock_mfa, mock_client_clas
 
     result = runner.invoke(cli, [
         'add-deck-eval',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--official-name', 'Chris Fletcher',
         '--position', 'Inspector of Turns',
@@ -537,8 +534,8 @@ def test_add_deck_eval_dry_run_does_reads_but_no_post(mock_mfa, mock_client_clas
 
 @patch('src.main.REMSClient')
 @patch('src.main.get_mfa_code')
-def test_refresh_members_csv_no_credentials_uses_cached_session(mock_mfa, mock_client_class, runner, tmp_path):
-    """--username/--password are optional; omitting them is valid when the cached session is live."""
+def test_refresh_members_uses_saved_login_for_team(mock_mfa, mock_client_class, runner, tmp_path):
+    """--team picks the saved login; the client gets its credentials and a session store."""
     mock_client = MagicMock()
     mock_client_class.return_value = mock_client
     mock_client.get_members_csv.return_value = "header1,header2\nvalue1,value2"
@@ -546,12 +543,14 @@ def test_refresh_members_csv_no_credentials_uses_cached_session(mock_mfa, mock_c
     output_file = tmp_path / "members.csv"
     result = runner.invoke(cli, [
         'refresh-members',
+        '--team', 'row',
         '--season', '2025',
         '--output', 'csv',
         '--output-file', str(output_file),
     ])
 
     assert result.exit_code == 0, result.output
-    mock_client_class.assert_called_once_with(None, None, mock_mfa)
+    args, kwargs = mock_client_class.call_args
+    assert args == ("auto@example.org", "s3cret", mock_mfa)
+    assert "session_store" in kwargs
     mock_client.login.assert_called_once()
-    mock_client.add_member_credential.assert_not_called()

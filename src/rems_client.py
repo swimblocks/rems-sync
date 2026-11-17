@@ -1,6 +1,4 @@
-import json
 import re
-from pathlib import Path
 from urllib.parse import urljoin
 
 import click
@@ -29,14 +27,31 @@ def _build_retry():
     )
 
 
-def _default_cookie_cache_path():
-    return Path.home() / ".rems-sync" / "cookies.json"
+class MemorySessionStore:
+    """A session store that keeps cookies in memory only.
+
+    The default for REMSClient, and what `auth login` uses so a fresh session isn't persisted
+    until the login it belongs to has been saved. The persistent store is
+    credentials.KeyringSessionStore; both have load() / save(cookies) / clear().
+    """
+
+    def __init__(self, cookies=None):
+        self.cookies = dict(cookies) if cookies else None
+
+    def load(self):
+        return dict(self.cookies) if self.cookies else None
+
+    def save(self, cookies):
+        self.cookies = dict(cookies)
+
+    def clear(self):
+        self.cookies = None
 
 
 class REMSClient:
     BASE_URL = "https://swimming.canada.sportsmanager.ie"
 
-    def __init__(self, username=None, password=None, mfa_callback=None, cookie_cache_path=None):
+    def __init__(self, username=None, password=None, mfa_callback=None, session_store=None):
         self.username = username
         self.password = password
         self.mfa_callback = mfa_callback
@@ -44,27 +59,20 @@ class REMSClient:
         adapter = HTTPAdapter(max_retries=_build_retry())
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
-        self.cookie_cache_path = (
-            Path(cookie_cache_path) if cookie_cache_path is not None
-            else _default_cookie_cache_path()
-        )
+        self.session_store = session_store if session_store is not None else MemorySessionStore()
 
     def _save_cookies(self):
+        cookies = requests.utils.dict_from_cookiejar(self.session.cookies)
         try:
-            self.cookie_cache_path.parent.mkdir(parents=True, exist_ok=True)
-            cookies = requests.utils.dict_from_cookiejar(self.session.cookies)
-            self.cookie_cache_path.write_text(json.dumps(cookies))
-            click.echo(f"Cached {len(cookies)} cookies to {self.cookie_cache_path}", err=True)
-        except OSError as e:
-            click.echo(f"Warning: could not save cookie cache: {e}", err=True)
+            self.session_store.save(cookies)
+        except Exception as e:  # any store failure: run on without a cache
+            # A cache is an optimisation: a refused or oversized keychain write must not fail
+            # the command. The cost is an MFA prompt on the next run.
+            click.echo(f"Warning: could not save the REMS session ({e}); "
+                       "the next run will log in afresh.", err=True)
 
     def _load_cookies(self):
-        if not self.cookie_cache_path.exists():
-            return False
-        try:
-            cookies = json.loads(self.cookie_cache_path.read_text())
-        except (OSError, json.JSONDecodeError):
-            return False
+        cookies = self.session_store.load()
         if not cookies:
             return False
         self.session.cookies.update(cookies)
@@ -72,9 +80,9 @@ class REMSClient:
 
     def _clear_cookie_cache(self):
         try:
-            self.cookie_cache_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+            self.session_store.clear()
+        except Exception as e:
+            click.echo(f"Warning: could not clear the saved REMS session ({e}).", err=True)
 
     def _keep_only_mfa_cookies(self):
         """Drop session-y cookies but preserve REMS 'remember-me' MFA cookies.
@@ -174,7 +182,7 @@ class REMSClient:
         if not self.username or not self.password:
             raise click.ClickException(
                 "No valid cached REMS session found and no credentials were provided. "
-                "Pass --username/--password or set REMS_USERNAME/REMS_PASSWORD."
+                "Run `python -m src.main auth login --team <alias>`."
             )
 
         # 1. GET the login form page to seed the session.

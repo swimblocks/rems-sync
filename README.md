@@ -26,22 +26,23 @@ pip install -r requirements.txt
 gcloud auth application-default login \
   --impersonate-service-account=rems-sync-sa@<your_project_id>.iam.gserviceaccount.com
 
-# Smoke-test the REMS login (warms the cookie cache so later commands skip MFA):
-python -m src.main login --username <user> --password <pw>
+# Save your REMS login once, under an alias such as `row` (prompts, then asks for an MFA code):
+python -m src.main auth login --team row
 ```
 
-The first authenticated REMS command of a session triggers an MFA prompt. Cookies are cached to `~/.rems-sync/cookies.json` so subsequent runs reuse the session without prompting.
+The password and the REMS session are kept in the OS keychain, so later commands need only
+`--team row`; an MFA code is asked for only when the session (about an hour) has expired.
 
 ## Features
 
-- Log in to REMS with MFA support.
+- Save REMS logins per alias in the OS keychain; log in with MFA support.
 - Refresh REMS members list, member details, and credentials — output to CSV or Google Sheet.
 - Upload members, details, or credentials from CSV to a Google Sheet.
 - Upload deck evaluations to REMS, either one at a time or in bulk from a meet's roster sheet.
 
 ## Documentation
 
-- [Authentication & MFA flow](docs/auth.md) — how REMS login + cookie cache + auto-reauth work end-to-end
+- [Authentication & MFA flow](docs/auth.md) — how REMS login + saved session + auto-reauth work end-to-end
 - [Deck evaluation upload](docs/deck-eval-upload.md) — design and behaviour of `add-deck-eval` / `upload-deck-evals`
 - [Cloud setup (optional)](docs/cloud-setup.md) — Terraform + service-account scaffolding for a future scheduled deployment ([#63](https://github.com/swimblocks/rems-sync/issues/63))
 
@@ -53,26 +54,32 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). One issue → one branch (`{issue-number
 
 ### Authentication
 
-Each command that interacts with REMS accepts your REMS username and password via command-line options or environment variables. When a valid cached session exists (see `~/.rems-sync/cookies.json`), credentials are optional — the cached session is reused automatically.
-
--   **Command-line options:** `--username <your_username>` and `--password <your_password>`
--   **Environment variables:** `REMS_USERNAME` and `REMS_PASSWORD`
-
-You will be prompted for an MFA code when a new login is required (i.e., no valid cached session exists).
-
-### Commands
-
-**Login:**
+REMS logins are saved once and then picked by alias with `--team <alias>` on every REMS
+command. An alias is any label you choose: a club (`row`), or a club and role
+(`row-referee`) if you hold several REMS logins.
 
 ```bash
-python -m src.main login --username <your_username> --password <your_password>
+python -m src.main auth login --team row     # prompt for username and password, log in (MFA), save
+python -m src.main auth status               # list saved logins
+python -m src.main auth logout --team row    # remove a saved login and its session
 ```
+
+- The username goes in `config.toml` in your user config directory; the password and the REMS
+  session go in the OS keychain (Windows Credential Manager, macOS Keychain, Linux Secret
+  Service). Nothing secret is written to a plain file.
+- `REMS_USERNAME` and `REMS_PASSWORD`, when **both** are set, override the saved login for the
+  run. Setting only one is an error.
+- You'll be asked for an MFA code only when the saved session has expired.
+
+Design: [docs/design/0001-saved-rems-login.md](docs/design/0001-saved-rems-login.md).
+
+### Commands
 
 **Refresh Members:**
 
 ```bash
-python -m src.main refresh-members --username <your_username> --password <your_password> --season <season> --output csv --output-file members.csv
-python -m src.main refresh-members --username <your_username> --password <your_password> --season <season> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Members"
+python -m src.main refresh-members --team <alias> --season <season> --output csv --output-file members.csv
+python -m src.main refresh-members --team <alias> --season <season> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Members"
 ```
 
 Replace `<your_username>`, `<your_password>`, `<season>`, and `<google_sheet_id>` with your actual values.
@@ -82,8 +89,8 @@ The `<season>` argument can be either a year (e.g., "2025") or a year range (e.g
 **Refresh Member Details:**
 
 ```bash
-python -m src.main refresh-member-details members.csv --username <your_username> --password <your_password> --season <season>  --output csv --output-file member_details.csv
-python -m src.main refresh-member-details members.csv --username <your_username> --password <your_password> --season <season> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Details"
+python -m src.main refresh-member-details members.csv --team <alias> --season <season>  --output csv --output-file member_details.csv
+python -m src.main refresh-member-details members.csv --team <alias> --season <season> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Details"
 ```
 The input CSV file (e.g., `members.csv`) must contain a column named something like "REMS ID", "REMSID", or "rems_id".
 
@@ -93,12 +100,12 @@ Given a CSV containing detailed, season-specific, identifiers members retrieve a
 
 To output the credentials to a CSV:
 ```bash
-python -m src.main refresh-member-credentials member_details.csv --username <your_username> --password <your_password> --output csv --output-file credentials.csv
+python -m src.main refresh-member-credentials member_details.csv --team <alias> --output csv --output-file credentials.csv
 ```
 
 To write the credentials directly to Google Sheets:
 ```bash
-python -m src.main refresh-member-credentials member_details.csv --username <your_username> --password <your_password> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Credentials"
+python -m src.main refresh-member-credentials member_details.csv --team <alias> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Credentials"
 ```
 
 **Upload Members from CSV:**
@@ -129,9 +136,9 @@ Two commands write deck evaluations to REMS: `add-deck-eval` for a single record
 
 #### Authentication and the cookie cache
 
-The first authenticated command of a session triggers an MFA login. Cookies are cached to `~/.rems-sync/cookies.json` so subsequent runs reuse the session without prompting. You'll only be prompted for an MFA code when REMS actually demands one (e.g. on a new device or after a full logout). A mid-batch 403 (Authentication-JWT expired during a long interactive session) triggers an automatic re-login and retry.
+The first REMS command after the saved session expires triggers an MFA login; the new session is saved to the OS keychain under the alias, so subsequent runs reuse it without prompting. You'll only be prompted for an MFA code when REMS actually demands one (e.g. on a new device or after a full logout). A mid-batch 403 (Authentication-JWT expired during a long interactive session) triggers an automatic re-login and retry.
 
-Run `python -m src.main login` to do nothing but log in (useful to warm the cache before a long batch). The full auth / MFA flow is documented in [docs/auth.md](docs/auth.md).
+Run `python -m src.main auth login --team <alias>` to log in afresh (useful to start a long batch with a fresh session). The full auth / MFA flow is documented in [docs/auth.md](docs/auth.md).
 
 #### `add-deck-eval` — single evaluation
 
@@ -139,7 +146,7 @@ Adds one deck evaluation for one official, no spreadsheet required. The tool cou
 
 ```bash
 python -m src.main add-deck-eval \
-  --username <user> --password <pw> \
+  --team <alias> \
   --season 2025-2026 \
   --official-name "Chris Fletcher" \
   --rems-id SC24176410 \
@@ -164,7 +171,7 @@ Reads a meet's Google Sheet, uploads every pending deck evaluation to REMS, and 
 
 ```bash
 python -m src.main upload-deck-evals \
-  --username <user> --password <pw> \
+  --team <alias> \
   --season 2025-2026 \
   [--sheet-id <google_sheet_id>] \
   [--positions-tab Positions] \

@@ -26,7 +26,7 @@ If REMS recognises the device via valid `mfa_*` cookies, hop 3's redirect goes s
 
 ### 1. Cached cookies + probe
 
-The session cookies from the most recent successful login are kept in `~/.rems-sync/cookies.json`. On every login attempt the cache is loaded and we POST a no-op search to `/sportlomo/user/MembershipManagement/members` (the probe). If the response is 200, the session is alive — no network login is needed.
+The session cookies from the most recent successful login are kept in the OS keychain (see [Session cache](#session-cache)). On every login attempt the cache is loaded and we POST a no-op search to `/sportlomo/user/MembershipManagement/members` (the probe). If the response is 200, the session is alive — no network login is needed.
 
 The probe must mirror real auth-requiring calls (POST with the standard XHR/Referer headers), because a GET on that URL returns 200 even with a stale `Authentication-JWT` (it serves the search form HTML). A POST actually exercises the JWT and returns 403 when it has lapsed.
 
@@ -49,9 +49,11 @@ When we land on the OTP form, `_do_mfa` does the rest:
 - POST `/sportlomo/users/mfa-verify-otp` with `digit_1`…`digit_6`, the hidden fields, and a `Referer` of the form URL.
 - On 302, walk the post-OTP chain (`/logged-in.php` → `/club_home.php`) and probe to confirm.
 
-## Cookie cache
+## Session cache
 
-After a successful login, `_save_cookies()` writes the entire `requests.Session().cookies` jar to `~/.rems-sync/cookies.json` as a flat name → value JSON dict. Future runs load these via `_load_cookies()` and skip the entire login dance when the probe still passes.
+After a successful login, `_save_cookies()` hands the entire `requests.Session().cookies` jar, as a flat name → value dict, to the client's session store. Future runs load it via `_load_cookies()` and skip the entire login dance when the probe still passes.
+
+The CLI's store is `KeyringSessionStore` in [src/credentials.py](../src/credentials.py): JSON in the OS keychain under service `rems-sync-session/<alias>`, keyed by the account's username, so a session is never reused by a different alias or account. If the keychain refuses the write (Windows Credential Manager caps an entry at 2,560 bytes), the run warns and carries on; the next run logs in afresh. `auth login` uses an in-memory `MemorySessionStore` and persists the session only after the login itself is saved. Design: [docs/design/0001-saved-rems-login.md](design/0001-saved-rems-login.md).
 
 ## Auto-reauth on 403
 
@@ -62,13 +64,13 @@ The `Authentication-JWT` cookie has a 1-hour `Max-Age`, so a long-running intera
 | Cookie | Lifetime | Set by | Purpose |
 |---|---|---|---|
 | `PHPSESSID` | session | Almost any GET to a REMS page | PHP session id. Tied to a single login attempt; carrying a stale one from a previous session breaks logins (REMS bounces back to the form). |
-| `mfa_token`, `mfa_tokens` | days/weeks (server-controlled) | `/sportlomo/users/mfa-login/` first hop | Used by REMS to determine whether the device has already passed MFA recently. Cached in our cookie file. |
+| `mfa_token`, `mfa_tokens` | days/weeks (server-controlled) | `/sportlomo/users/mfa-login/` first hop | Used by REMS to determine whether the device has already passed MFA recently. Kept in the saved session. |
 | `mfa_uuid` | days/weeks | Set on successful OTP POST | "Known device" id. Honoring this lets future logins skip OTP. |
 | `Authentication-JWT` | 1 hour | Every authenticated sportlomo response refreshes it | JWT used by sportlomo endpoints. Slides forward on activity; lapses on idle. |
 
 ## Logout
 
-`logout()` GETs `/Maint-Logout.php`, clears the session jar, and removes `~/.rems-sync/cookies.json`. After logout the next command will need a fresh OTP.
+`logout()` GETs `/Maint-Logout.php`, clears the session jar, and clears the saved session. After logout the next command will need a fresh OTP. (`auth logout --team <alias>` is different: it removes the saved login and its session from the keychain without contacting REMS.)
 
 ## Failure modes seen during development
 

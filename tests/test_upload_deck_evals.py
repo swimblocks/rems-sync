@@ -7,6 +7,8 @@ from click.testing import CliRunner
 
 from src.main import cli
 
+pytestmark = pytest.mark.usefixtures("saved_row_login")
+
 
 @pytest.fixture
 def runner():
@@ -101,7 +103,7 @@ def test_upload_deck_evals_happy_path(mock_mfa, mock_client_class, mock_get_gs,
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
     ])
@@ -158,7 +160,7 @@ def test_upload_deck_evals_continues_on_failure(mock_mfa, mock_client_class, moc
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
     ])
@@ -193,7 +195,7 @@ def test_upload_deck_evals_dry_run(mock_mfa, mock_client_class, mock_get_gs,
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--dry-run',
@@ -238,7 +240,7 @@ def test_upload_deck_evals_already_recorded_ticks_cell(mock_mfa, mock_client_cla
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
     ])
@@ -276,7 +278,7 @@ def test_upload_deck_evals_interactive_yes_posts(mock_mfa, mock_client_class, mo
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--interactive',
@@ -311,7 +313,7 @@ def test_upload_deck_evals_interactive_no_skips(mock_mfa, mock_client_class, moc
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--interactive',
@@ -368,7 +370,7 @@ def test_upload_deck_evals_interactive_quit_aborts_batch(mock_mfa, mock_client_c
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--interactive',
@@ -420,7 +422,7 @@ def test_upload_deck_evals_recheck_verify_only(mock_mfa, mock_client_class, mock
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--recheck',
@@ -471,7 +473,7 @@ def test_upload_deck_evals_recheck_detects_swapped_dates(mock_mfa, mock_client_c
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--recheck',
@@ -520,7 +522,7 @@ def test_upload_deck_evals_recheck_interactive_fixes_swapped(mock_mfa, mock_clie
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--recheck', '--interactive',
@@ -569,7 +571,7 @@ def test_upload_deck_evals_recheck_interactive_skip_swapped(mock_mfa, mock_clien
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--recheck', '--interactive',
@@ -605,7 +607,7 @@ def test_upload_deck_evals_recheck_does_not_prompt_for_missing(mock_mfa, mock_cl
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--recheck', '--interactive',
@@ -661,7 +663,7 @@ def test_upload_deck_evals_filters_by_club(mock_mfa, mock_client_class, mock_get
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
     ])
@@ -710,7 +712,7 @@ def test_upload_deck_evals_no_match_error_is_short(mock_mfa, mock_client_class, 
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
     ])
@@ -766,7 +768,7 @@ def test_upload_deck_evals_interactive_prompts_for_family_on_no_match(
     # then 'y' at the Submit? prompt.
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--interactive',
@@ -820,7 +822,7 @@ def test_upload_deck_evals_interactive_family_skip(
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--interactive',
@@ -884,7 +886,7 @@ def test_upload_deck_evals_discovers_and_prompts_when_interactive(
     # Input "1" picks the only roster-bearing meet (Cunningham).
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         # No --sheet-id !
         '--season-folder-id', 'root',
@@ -960,7 +962,7 @@ def test_upload_deck_evals_skips_broken_meet_continues_batch(
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--season-folder-id', 'root',
     ])
@@ -1019,7 +1021,7 @@ def test_upload_deck_evals_processes_all_meets_when_not_interactive(
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--season-folder-id', 'root',
         # No --interactive!
@@ -1067,7 +1069,7 @@ def test_upload_deck_evals_recheck_interactive_prompts_to_add_missing(
     # User says 'y' to add the missing eval.
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--recheck', '--interactive',
@@ -1115,7 +1117,7 @@ def test_upload_deck_evals_recheck_missing_prompts_for_provider_when_blank(
     # Input: 'y' to add, then a provider name.
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--recheck', '--interactive',
@@ -1163,7 +1165,7 @@ def test_upload_deck_evals_recheck_interactive_skip_missing(
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
         '--recheck', '--interactive',
@@ -1195,7 +1197,7 @@ def test_upload_deck_evals_no_pending(
 
     result = runner.invoke(cli, [
         'upload-deck-evals',
-        '--username', 'u', '--password', 'p',
+        '--team', 'row',
         '--season', '2025-2026',
         '--sheet-id', 'fake-id',
     ])

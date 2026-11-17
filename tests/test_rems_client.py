@@ -1,16 +1,15 @@
-import json
 
 import pytest
 import responses
 from faker import Faker
 
-from src.rems_client import REMSClient
+from src.rems_client import MemorySessionStore, REMSClient
 
 
 @pytest.fixture
 def rems_client(tmp_path):
     return REMSClient("test_user", "test_password", lambda: "123456",
-                      cookie_cache_path=tmp_path / "cookies.json")
+                      session_store=MemorySessionStore())
 
 def _mock_login_form(client):
     """Mock the GET /maint.php login form fetch the new login flow makes first."""
@@ -115,18 +114,16 @@ def test_login_persists_cookies_on_success(rems_client):
     )
     _mock_post_mfa_redirect_chain(rems_client)
     assert rems_client.login() is True
-    assert rems_client.cookie_cache_path.exists()
-    cached = json.loads(rems_client.cookie_cache_path.read_text())
+    cached = rems_client.session_store.load()
     assert cached.get("sess") == "abc123"
 
 
 @responses.activate
 def test_login_uses_cached_cookies_when_probe_returns_200(tmp_path):
-    cache = tmp_path / "cookies.json"
-    cache.write_text(json.dumps({"sess": "cached-token"}))
+    cache = MemorySessionStore({"sess": "cached-token"})
     mfa_calls = []
     client = REMSClient("u", "p", lambda: (mfa_calls.append(1), "111111")[1],
-                        cookie_cache_path=cache)
+                        session_store=cache)
     responses.add(
         responses.POST,
         f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
@@ -139,9 +136,8 @@ def test_login_uses_cached_cookies_when_probe_returns_200(tmp_path):
 @responses.activate
 def test_login_falls_back_when_probe_returns_403(tmp_path):
     """Stale JWT: PHPSESSID/mfa cookies present but Authentication-JWT expired."""
-    cache = tmp_path / "cookies.json"
-    cache.write_text(json.dumps({"sess": "stale-jwt"}))
-    client = REMSClient("u", "p", lambda: "123456", cookie_cache_path=cache)
+    cache = MemorySessionStore({"sess": "stale-jwt"})
+    client = REMSClient("u", "p", lambda: "123456", session_store=cache)
     # First the cache-probe POST returns 403 (stale JWT) -> fall back to full login.
     # Then after the OTP, the chain probe POST returns 200.
     responses.add(
@@ -181,13 +177,12 @@ def test_login_falls_back_when_probe_returns_403(tmp_path):
 @responses.activate
 def test_login_skips_mfa_real_chain(tmp_path):
     """The real successful no-MFA chain: Maint-Login -> mfa-login/ -> logged-in.php -> /club_home.php."""
-    cache = tmp_path / "cookies.json"
-    cache.write_text(json.dumps({
+    cache = MemorySessionStore({
         "PHPSESSID": "stale", "mfa_token": "x", "mfa_tokens": "y", "mfa_uuid": "z",
-    }))
+    })
     mfa_calls = []
     client = REMSClient("u", "p", lambda: (mfa_calls.append(1), "111111")[1],
-                        cookie_cache_path=cache)
+                        session_store=cache)
     # Probe with stale PHPSESSID fails (so we go to full login).
     responses.add(
         responses.POST,
@@ -232,14 +227,13 @@ def test_login_skips_mfa_real_chain(tmp_path):
 @responses.activate
 def test_login_keeps_only_mfa_cookies_before_post(tmp_path):
     """Stale PHPSESSID is dropped, mfa_* preserved, before POST Maint-Login."""
-    cache = tmp_path / "cookies.json"
-    cache.write_text(json.dumps({
+    cache = MemorySessionStore({
         "PHPSESSID": "stale-and-rejected",
         "mfa_token": "keep-me",
         "mfa_tokens": "keep-me-2",
         "mfa_uuid": "keep-me-3",
-    }))
-    client = REMSClient("u", "p", lambda: "111111", cookie_cache_path=cache)
+    })
+    client = REMSClient("u", "p", lambda: "111111", session_store=cache)
 
     # Probe fails so we go to full login.
     responses.add(
@@ -284,9 +278,8 @@ def _no_retry_sleep(monkeypatch):
 @responses.activate
 def test_request_retries_transient_5xx(tmp_path):
     """A 502 from REMS is retried; the eventual 200 is returned to the caller."""
-    cache = tmp_path / "cookies.json"
-    cache.write_text(json.dumps({"sess": "ok"}))
-    client = REMSClient("u", "p", lambda: "123456", cookie_cache_path=cache)
+    cache = MemorySessionStore({"sess": "ok"})
+    client = REMSClient("u", "p", lambda: "123456", session_store=cache)
     # Probe succeeds; cache login path
     responses.add(
         responses.POST,
@@ -312,9 +305,8 @@ def test_request_retries_transient_5xx(tmp_path):
 @responses.activate
 def test_request_retries_429_with_retry_after(tmp_path):
     """429 Too Many Requests is retried — urllib3 honors Retry-After itself."""
-    cache = tmp_path / "cookies.json"
-    cache.write_text(json.dumps({"sess": "ok"}))
-    client = REMSClient("u", "p", lambda: "111111", cookie_cache_path=cache)
+    cache = MemorySessionStore({"sess": "ok"})
+    client = REMSClient("u", "p", lambda: "111111", session_store=cache)
     responses.add(
         responses.POST,
         f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
@@ -337,9 +329,8 @@ def test_request_retries_429_with_retry_after(tmp_path):
 @responses.activate
 def test_request_retries_500_408_etc(tmp_path):
     """Confirm other retriable codes (not just 502) trigger retry."""
-    cache = tmp_path / "cookies.json"
-    cache.write_text(json.dumps({"sess": "ok"}))
-    client = REMSClient("u", "p", lambda: "111111", cookie_cache_path=cache)
+    cache = MemorySessionStore({"sess": "ok"})
+    client = REMSClient("u", "p", lambda: "111111", session_store=cache)
     responses.add(
         responses.POST,
         f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
@@ -364,9 +355,8 @@ def test_request_retries_500_408_etc(tmp_path):
 def test_request_5xx_retry_exhausts_returns_last(tmp_path):
     """If 502s persist past the retry budget, the final response is returned
     (so the caller's existing error path can surface it)."""
-    cache = tmp_path / "cookies.json"
-    cache.write_text(json.dumps({"sess": "ok"}))
-    client = REMSClient("u", "p", lambda: "123456", cookie_cache_path=cache)
+    cache = MemorySessionStore({"sess": "ok"})
+    client = REMSClient("u", "p", lambda: "123456", session_store=cache)
     responses.add(
         responses.POST,
         f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
@@ -385,11 +375,10 @@ def test_request_5xx_retry_exhausts_returns_last(tmp_path):
 @responses.activate
 def test_request_auto_reauth_on_403(tmp_path):
     """A 403 mid-call triggers a full MFA re-login and retries the original request."""
-    cache = tmp_path / "cookies.json"
-    cache.write_text(json.dumps({"sess": "stale"}))
+    cache = MemorySessionStore({"sess": "stale"})
     mfa_calls = []
     client = REMSClient("u", "p", lambda: (mfa_calls.append(1), "123456")[1],
-                        cookie_cache_path=cache)
+                        session_store=cache)
 
     # Initial probe succeeds (200 POST) so we go straight to using the cache.
     responses.add(
@@ -948,9 +937,8 @@ def test_get_member_credentials(rems_client):
 @responses.activate
 def test_login_succeeds_with_no_credentials_when_cache_valid(tmp_path):
     """No username/password needed when the cached session probe passes."""
-    cache = tmp_path / "cookies.json"
-    cache.write_text(json.dumps({"Authentication-JWT": "live-token"}))
-    client = REMSClient(cookie_cache_path=cache)
+    cache = MemorySessionStore({"Authentication-JWT": "live-token"})
+    client = REMSClient(session_store=cache)
     responses.add(
         responses.POST,
         f"{client.BASE_URL}/sportlomo/user/MembershipManagement/members",
@@ -963,9 +951,8 @@ def test_login_succeeds_with_no_credentials_when_cache_valid(tmp_path):
 def test_login_raises_clear_error_when_no_credentials_and_cache_stale(tmp_path):
     """Stale cache + no credentials → ClickException with a human-readable message."""
     import click
-    cache = tmp_path / "cookies.json"
-    cache.write_text(json.dumps({"Authentication-JWT": "stale-token"}))
-    client = REMSClient(cookie_cache_path=cache)
+    cache = MemorySessionStore({"Authentication-JWT": "stale-token"})
+    client = REMSClient(session_store=cache)
     # Probe returns 403 — session is stale.
     responses.add(
         responses.POST,
@@ -974,3 +961,15 @@ def test_login_raises_clear_error_when_no_credentials_and_cache_stale(tmp_path):
     )
     with pytest.raises(click.ClickException, match="no credentials were provided"):
         client.login()
+
+
+def test_refused_session_save_is_only_a_warning(capsys):
+    """A session store that refuses (e.g. the keychain's size limit) must not fail the run."""
+    class RefusingStore(MemorySessionStore):
+        def save(self, cookies):
+            raise OSError("The stub received bad data")
+
+    client = REMSClient("u", "p", None, session_store=RefusingStore())
+    client.session.cookies.set("sess", "x")
+    client._save_cookies()
+    assert "could not save the REMS session" in capsys.readouterr().err

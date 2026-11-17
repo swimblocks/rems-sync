@@ -1,9 +1,14 @@
 import re
+import sys
 from io import StringIO
 
 import click
 import pandas as pd
+import pwinput
+from keyring.errors import KeyringError, PasswordDeleteError
 
+from . import credentials
+from .credentials import KeyringSessionStore, Login, NotLoggedInError
 from .gsheet import (
     ensure_columns_after,
     find_drive_sheet_in_folder,
@@ -19,7 +24,7 @@ from .gsheet import (
     update_cell,
     write_df_to_sheet,
 )
-from .rems_client import REMSClient, get_mfa_code
+from .rems_client import MemorySessionStore, REMSClient, get_mfa_code
 from .utils import (
     count_existing_deck_evals,
     deck_eval_credential_label,
@@ -376,32 +381,124 @@ def _prompt_for_credential_family(options, sheet_position, row_idx, name, rems_i
     return None
 
 
+team_option = click.option(
+    "--team", "team_alias", required=True, metavar="ALIAS",
+    help="Saved REMS login to use, e.g. row or row-referee (see `auth login`).")
+
+
+def _rems_client(team_alias):
+    """A REMSClient for the alias's login (env vars override), with that account's session."""
+    try:
+        login = credentials.load_login(team_alias)
+    except NotLoggedInError as e:
+        raise click.ClickException(str(e)) from e
+    except KeyringError as e:
+        raise click.ClickException(f"Could not read the saved REMS login from the OS keychain: {e}") from e
+    return REMSClient(login.username, login.password, get_mfa_code,
+                      session_store=KeyringSessionStore(team_alias, login.username))
+
+
+
 @click.group()
 def cli():
     """A CLI tool to synchronize data from the Swimming Canada REMS system."""
     pass
 
-@cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
-@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
-def login(username, password):
-    """Logs in to the REMS system."""
-    client = REMSClient(username, password, get_mfa_code)
-    client.login()
+
+@cli.group()
+def auth():
+    """Manage the saved REMS login for each team alias."""
+
+
+@auth.command("login")
+@team_option
+def auth_login(team_alias):
+    """Log in to REMS (with MFA) and save the login if it works."""
+    username = click.prompt("REMS username", default=credentials.saved_usernames().get(team_alias))
+    password = pwinput.pwinput("REMS password: ")  # echoes * per character
+    # Fresh login into a memory-only store: the session is persisted only once the login it
+    # belongs to has been saved, so a failed save can't leave it under this alias.
+    session = MemorySessionStore()
+    client = REMSClient(username, password, get_mfa_code, session_store=session)
+    try:
+        client.login(use_cache=False)
+    except Exception as e:  # any login failure means: save nothing
+        raise click.ClickException(f"REMS login failed: {e}. Nothing saved.") from e
+
+    problem = None
+    try:
+        for warning in credentials.save_login(team_alias, Login(username, password)):
+            click.echo(f"Warning: {warning}", err=True)
+    except PasswordDeleteError as e:
+        problem = str(e)  # the new login is saved; only the old password was left behind
+    except (KeyringError, OSError) as e:
+        raise click.ClickException(f"Logged in, but saving failed: {e}") from e
+
+    cookies = session.load()
+    if cookies:
+        try:
+            KeyringSessionStore(team_alias, username).save(cookies)
+        except Exception as e:  # a session is only a cache
+            click.echo(f"Warning: could not save the REMS session to the OS keychain ({e}); "
+                       "the next run will ask for an MFA code.", err=True)
+    if problem:
+        raise click.ClickException(problem)
+    click.echo(f"Logged in to REMS as {username}; saved as {team_alias!r} "
+               "(password in the OS keychain).")
+
+
+@auth.command("status")
+def auth_status():
+    """Show the saved username for each team alias."""
+    ok = True
+    try:
+        env = credentials.environment_login()
+    except NotLoggedInError as e:
+        click.echo(str(e))
+        env, ok = None, False
+    if env is not None:
+        click.echo(f"{credentials.USERNAME_ENV} and {credentials.PASSWORD_ENV} are set: "
+                   f"runs sign in as {env.username}, not a saved login.")
+    saved = credentials.saved_usernames()
+    for alias, username in sorted(saved.items()):
+        try:
+            credentials.load_saved_login(alias)
+            click.echo(f"{alias}: {username}")
+        except NotLoggedInError:
+            click.echo(f"{alias}: {username} (password missing from the OS keychain; "
+                       f"run `python -m src.main auth login --team {alias}`)")
+            ok = False
+    if not saved and env is None:
+        click.echo("No saved logins. Run `python -m src.main auth login --team <alias>`.")
+        ok = False
+    if not ok:
+        sys.exit(1)
+
+
+@auth.command("logout")
+@team_option
+def auth_logout(team_alias):
+    """Remove the saved login and session for a team alias."""
+    try:
+        credentials.delete_login(team_alias)
+    except NotLoggedInError as e:
+        raise click.ClickException(str(e)) from e
+    except KeyringError as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"Removed the saved login for {team_alias!r}.")
 
 @cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
-@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
+@team_option
 @click.option('--output', type=click.Choice(['csv', 'gsheet']), default='csv', help='The output format.')
 @click.option('--output-file', help='The file to write CSV output to (required if output is csv).')
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Members', help='The name of the sheet to write to.')
 @click.option('--season', required=True, help='The season (e.g., "2025" or "2025-2026") to refresh.')
-def refresh_members(username, password, output, output_file, sheet_id, sheet_name, season):
+def refresh_members(team_alias, output, output_file, sheet_id, sheet_name, season):
     """Refreshes the REMS members list."""
     season_id = parse_season_to_id(season)
     click.echo(f"Refreshing REMS members (output: {output}, season: {season}, season_id: {season_id})")
-    client = REMSClient(username, password, get_mfa_code)
+    client = _rems_client(team_alias)
     client.login()
     csv_data = client.get_members_csv(season_id)
 
@@ -421,15 +518,14 @@ def refresh_members(username, password, output, output_file, sheet_id, sheet_nam
         write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
 
 @cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
-@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
+@team_option
 @click.option('--output', type=click.Choice(['csv', 'gsheet']), default='csv', help='The output format.')
 @click.option('--output-file', help='The file to write CSV output to (required if output is csv).')
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Member Details', help='The name of the sheet to write to.')
 @click.option('--season', required=True, help='The season (e.g., "2025" or "2025-2026") to refresh.')
 @click.argument('input_file', type=click.Path(exists=True))
-def refresh_member_details(username, password, output, output_file, sheet_id, sheet_name, season, input_file):
+def refresh_member_details(team_alias, output, output_file, sheet_id, sheet_name, season, input_file):
     """Refreshes the REMS member details using REMS IDs from an input CSV."""
     season_id = parse_season_to_id(season)
     click.echo(f"Refreshing REMS member details (input: {input_file}, output: {output}, season: {season}, season_id: {season_id})")
@@ -459,7 +555,7 @@ def refresh_member_details(username, password, output, output_file, sheet_id, sh
     if len(rems_ids) < len(rems_ids_all):
         click.echo(f"Skipped {len(rems_ids_all) - len(rems_ids)} invalid REMS IDs.")
 
-    client = REMSClient(username, password, get_mfa_code)
+    client = _rems_client(team_alias)
     client.login()
 
     all_details = []
@@ -488,17 +584,16 @@ def refresh_member_details(username, password, output, output_file, sheet_id, sh
             write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
 
 @cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
-@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
+@team_option
 @click.option('--output', type=click.Choice(['csv', 'gsheet']), default='csv', help='The output format.')
 @click.option('--output-file', help='The file to write CSV output to (required if output is csv).')
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Member Credentials', help='The name of the sheet to write to.')
 @click.argument('member_details_file', type=click.File('r') )
-def refresh_member_credentials(username, password, output, output_file, sheet_id, sheet_name, member_details_file):
+def refresh_member_credentials(team_alias, output, output_file, sheet_id, sheet_name, member_details_file):
     """Refreshes the REMS member credentials."""
     click.echo(f"Refreshing REMS member credentials (output: {output})")
-    client = REMSClient(username, password, get_mfa_code)
+    client = _rems_client(team_alias)
     client.login()
 
     try:
@@ -576,8 +671,7 @@ def upload_member_credentials(input_file, sheet_id, sheet_name):
 
 
 @cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
-@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
+@team_option
 @click.option('--season', required=True, help='The season (e.g. "2025-2026").')
 @click.option('--sheet-id', default=None,
               help='The Google Sheet ID with Positions, Grid, and Meet tabs. '
@@ -600,7 +694,7 @@ def upload_member_credentials(input_file, sheet_id, sheet_name):
 @click.option('--interactive', is_flag=True, help='Prompt y/n/q before POSTing each evaluation.')
 @click.option('--recheck', is_flag=True, help='Verify-only pass: include rows already marked Deck Eval Recorded? = TRUE, '
                                               'confirm against REMS, but never POST. Missing rows are reported.')
-def upload_deck_evals(username, password, season, sheet_id, season_folder_id, roster_name_substring,
+def upload_deck_evals(team_alias, season, sheet_id, season_folder_id, roster_name_substring,
                      positions_tab, grid_tab, meet_tab,
                      officials_tab, session_col, rems_club, meet_name, dry_run, interactive, recheck):
     """Upload deck evaluations from a positions sheet to REMS and mark each row recorded."""
@@ -616,7 +710,7 @@ def upload_deck_evals(username, password, season, sheet_id, season_folder_id, ro
 
     # One login covers every sheet — the cookie cache makes subsequent login()
     # calls cheap, but we don't even need them.
-    client = REMSClient(username, password, get_mfa_code)
+    client = _rems_client(team_alias)
     client.login()
 
     overall_successes = 0
@@ -984,8 +1078,7 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
 
 
 @cli.command()
-@click.option('--username', envvar='REMS_USERNAME', help='REMS username. Optional when a valid cached session exists.')
-@click.option('--password', envvar='REMS_PASSWORD', help='REMS password. Optional when a valid cached session exists.', hide_input=True)
+@team_option
 @click.option('--season', required=True, help='The season (e.g. "2025-2026").')
 @click.option('--official-name', required=True, help='Official\'s full name, e.g. "Chris Fletcher".')
 @click.option('--rems-id', default=None, help='REMS ID (e.g. SC24176410); if given, used instead of name search.')
@@ -1000,12 +1093,12 @@ def _process_meet_sheet(client, gsheet_client, sheet_id, *,
                    'falls on ANY of these dates, enforcing "no two evals for the same position at the same meet". '
                    'When omitted, defaults to the Wed..Sun bracket around --date.')
 @click.option('--dry-run', is_flag=True, help='Print what would be posted without contacting REMS.')
-def add_deck_eval(username, password, season, official_name, rems_id, position, provider, meet, eval_date, description, meet_dates, dry_run):
+def add_deck_eval(team_alias, season, official_name, rems_id, position, provider, meet, eval_date, description, meet_dates, dry_run):
     """Add a single deck evaluation for one named official."""
     season_id = parse_season_to_id(season)
     start_date = to_rems_date_format(eval_date)
 
-    client = REMSClient(username, password, get_mfa_code)
+    client = _rems_client(team_alias)
     client.login()
 
     click.echo(f"Looking up {official_name!r} in season {season}...")
