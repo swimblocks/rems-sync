@@ -3,239 +3,51 @@
 [![ci](https://github.com/swimblocks/rems-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/swimblocks/rems-sync/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Python CLI that syncs data between Swimming Canada's **REMS / SportLomo** officials registry and Google Sheets. Pulls members, member details, and credentials out of REMS for reporting; pushes deck evaluations from a meet's roster sheet back into REMS.
+A Python CLI that syncs Swimming Canada's **REMS / SportLomo** officials registry with Google
+Sheets. It pulls your club's members, their details and credentials out of REMS into a
+season's registration sheet, and records deck evaluations from a meet's roster sheet in REMS.
 
-## Prerequisites
-
-- **Python 3.12+**
-- **Google Cloud CLI** (`gcloud`) — needed for Google authentication. Install via [cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install); platform shortcuts: [Windows](https://cloud.google.com/sdk/docs/install#windows) · [macOS](https://cloud.google.com/sdk/docs/install#mac) · [Linux](https://cloud.google.com/sdk/docs/install#linux).
-- A **GCP project** with the Sheets and Drive APIs enabled and an `rems-sync-sa` service account provisioned — one-time setup via Terraform, see [docs/cloud-setup.md](docs/cloud-setup.md).
-- A **REMS / SportLomo officials-portal login** with permission to manage your club's officials.
-- **Editor access** to the target Google Sheet (whoever owns the sheet shares it with the Google account you'll log into below).
+- Log in to REMS, with its emailed one-time code, and reuse the session for an hour.
+- Refresh members, member details and credentials, to CSV or a sheet tab.
+- Record deck evaluations one at a time, or a whole meet's from its roster sheet, never
+  twice; and check a meet or season's sheets against REMS.
 
 ## Quick start
+
+You need Python 3.12+, the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), a
+REMS login for your club's officials, and a sheet shared with the `rems-sync-sa` service
+account.
 
 ```bash
 git clone https://github.com/swimblocks/rems-sync.git
 cd rems-sync
 python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-# One-time Google auth — impersonate the provisioned service account
-# (see docs/cloud-setup.md for the one-time Terraform prerequisite):
-gcloud auth application-default login \
-  --impersonate-service-account=rems-sync-sa@<your_project_id>.iam.gserviceaccount.com
-
-# Save your REMS login once, under an alias such as `row` (prompts, then asks for an MFA code):
-python -m src.main auth login --team row
+python -m src.main --help
 ```
 
-The password and the REMS session are kept in the OS keychain, so later commands need only
-`--team row`; an MFA code is asked for only when the session (about an hour) has expired.
-
-## Features
-
-- Save REMS logins per alias in the OS keychain; log in with MFA support.
-- Refresh REMS members list, member details, and credentials — output to CSV or Google Sheet.
-- Upload members, details, or credentials from CSV to a Google Sheet.
-- Upload deck evaluations to REMS, either one at a time or in bulk from a meet's roster sheet.
+New here? Follow [Your first refresh](docs/tutorials/first-refresh.md).
 
 ## Documentation
 
-- [Authentication & MFA flow](docs/auth.md) — how REMS login + saved session + auto-reauth work end-to-end
-- [Deck evaluation upload](docs/deck-eval-upload.md) — design and behaviour of `add-deck-eval` / `upload-deck-evals`
-- [Cloud setup (optional)](docs/cloud-setup.md) — Terraform + service-account scaffolding for a future scheduled deployment ([#63](https://github.com/swimblocks/rems-sync/issues/63))
+[docs/](docs/README.md), sorted by what each page is for:
+
+- **Tutorial:** [your first refresh](docs/tutorials/first-refresh.md).
+- **How-to:** [refresh a season's registration sheet](docs/how-to/refresh-registration-sheet.md),
+  [upload a meet's deck evaluations](docs/how-to/upload-deck-evals.md),
+  [record one deck evaluation](docs/how-to/add-a-deck-eval.md),
+  [set up Google access](docs/how-to/set-up-google-access.md).
+- **Reference:** [CLI](docs/reference/cli.md), [sheets and CSV files](docs/reference/sheets.md),
+  [REMS](docs/reference/rems.md).
+- **Explanation:** [logging in to REMS](docs/explanation/rems-login.md),
+  [how deck evaluations are recorded](docs/explanation/deck-eval-upload.md),
+  [Google access](docs/explanation/google-access.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). One issue → one branch (`{issue-number}-{slug}`) → one PR.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md). One issue → one branch
+(`{issue-number}-{slug}`) → one PR.
 
-## Usage
-
-### Authentication
-
-REMS logins are saved once and then picked by alias with `--team <alias>` on every REMS
-command. An alias is any label you choose: a club (`row`), or a club and role
-(`row-referee`) if you hold several REMS logins.
-
-```bash
-python -m src.main auth login --team row     # prompt for username and password, log in (MFA), save
-python -m src.main auth status               # list saved logins
-python -m src.main auth logout --team row    # remove a saved login and its session
-```
-
-- The username goes in `config.toml` in your user config directory; the password and the REMS
-  session go in the OS keychain (Windows Credential Manager, macOS Keychain, Linux Secret
-  Service). Nothing secret is written to a plain file.
-- `REMS_USERNAME` and `REMS_PASSWORD`, when **both** are set, override the saved login for the
-  run. Setting only one is an error.
-- You'll be asked for an MFA code only when the saved session has expired.
-
-Design: [docs/design/0001-saved-rems-login.md](docs/design/0001-saved-rems-login.md).
-
-### Commands
-
-**Refresh Members:**
-
-```bash
-python -m src.main refresh-members --team <alias> --season <season> --output csv --output-file members.csv
-python -m src.main refresh-members --team <alias> --season <season> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Members"
-```
-
-Replace `<your_username>`, `<your_password>`, `<season>`, and `<google_sheet_id>` with your actual values.
-
-The `<season>` argument can be either a year (e.g., "2025") or a year range (e.g., "2025-2026").
-
-**Refresh Member Details:**
-
-```bash
-python -m src.main refresh-member-details members.csv --team <alias> --season <season>  --output csv --output-file member_details.csv
-python -m src.main refresh-member-details members.csv --team <alias> --season <season> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Details"
-```
-The input CSV file (e.g., `members.csv`) must contain a column named something like "REMS ID", "REMSID", or "rems_id".
-
-**Refresh Member Credentials:**
-
-Given a CSV containing detailed, season-specific, identifiers members retrieve all of the credentials for those members.  The command assumes that the CSV has the same columns as the output of the refresh-member-details command.
-
-To output the credentials to a CSV:
-```bash
-python -m src.main refresh-member-credentials member_details.csv --team <alias> --output csv --output-file credentials.csv
-```
-
-To write the credentials directly to Google Sheets:
-```bash
-python -m src.main refresh-member-credentials member_details.csv --team <alias> --output gsheet --sheet-id <google_sheet_id> --sheet-name "REMS Member Credentials"
-```
-
-**Upload Members from CSV:**
-
-```bash
-python -m src.main upload-members --input-file rems_export.csv --sheet-id <google_sheet_id> --sheet-name "REMS Members"
-```
-
-**Upload Member Details from CSV:**
-
-```bash
-python -m src.main upload-member-details --input-file rems_member_details.csv --sheet-id <google_sheet_id> --sheet-name "REMS Member Details"
-```
-
-**Upload Member Credentials from CSV:**
-
-Given a CSV containing member credentials in the format generated by the `refresh-member-credentials` command, upload the credentials to the specified Google Sheet.
-
-```bash
-python -m src.main upload-member-credentials --input-file rems_member_credentials.csv --sheet-id <google_sheet_id> [--sheet-name "REMS Member Credentials"]
-```
-
-Unless `--sheet-name` is specified, the credentials will overwrite the contents of the sheet tab named "REMS Member Credentials".
-
-### Deck evaluation upload
-
-Two commands write deck evaluations to REMS: `add-deck-eval` for a single record, and `upload-deck-evals` for a meet-wide batch read from a Google Sheet. Both use the same underlying flow: resolve the official, work out whether this is their #1 or #2 evaluation for the position, check that the same meet/session isn't already recorded, then POST the credential.
-
-#### Authentication and the cookie cache
-
-The first REMS command after the saved session expires triggers an MFA login; the new session is saved to the OS keychain under the alias, so subsequent runs reuse it without prompting. You'll only be prompted for an MFA code when REMS actually demands one (e.g. on a new device or after a full logout). A mid-batch 403 (Authentication-JWT expired during a long interactive session) triggers an automatic re-login and retry.
-
-Run `python -m src.main auth login --team <alias>` to log in afresh (useful to start a long batch with a fresh session). The full auth / MFA flow is documented in [docs/auth.md](docs/auth.md).
-
-#### `add-deck-eval` — single evaluation
-
-Adds one deck evaluation for one official, no spreadsheet required. The tool counts existing evaluations for the position in REMS to pick #1 vs #2, then verifies that the same meet + session isn't already recorded before POSTing.
-
-```bash
-python -m src.main add-deck-eval \
-  --team <alias> \
-  --season 2025-2026 \
-  --official-name "Chris Fletcher" \
-  --rems-id SC24176410 \
-  --position "Chief Timer" \
-  --provider "Kaoru Yajima" \
-  --meet "Cunningham Classic 2026" \
-  --date 2026-04-12 \
-  --description "Session 6" \
-  [--meet-dates 2026-04-10,2026-04-11,2026-04-12] \
-  [--dry-run]
-```
-
-- `--rems-id` (optional but recommended): look up by REMS ID instead of name search. Avoids the "Janpreet" / single-name ambiguity.
-- `--meet-dates` (optional): comma-separated list of all the meet's session dates. When provided, the duplicate check rejects an add if any existing eval for the position falls on any of these dates — enforcing "no two evals for the same position at the same meet" even if a previous eval was on a different session. **When omitted, the tool defaults to the Wed..Sun bracket around `--date`** (most recent Wed on/before, through next Sun on/after). Pass `--meet-dates` explicitly for meets that span outside this default.
-- `--dry-run`: do every read (login, member lookup, existing credentials, form options) but skip the POST.
-
-Duplicate detection uses the same logic for both commands: any existing deck eval for the same position whose `start_date` falls within the date set is treated as the same record. `upload-deck-evals` always passes the full meet's session date set from the Grid tab (the rule is fully enforced). `add-deck-eval` defaults to the Wed..Sun bracket around `--date`, or to `--meet-dates` if provided. If found, "already recorded" is reported and the command exits 0 (idempotent). If the official is at the form's maximum (#1 and #2 both exist) on dates outside the set, the command refuses with a clear message instructing you to resolve it in REMS.
-
-#### `upload-deck-evals` — batch from a Google Sheet
-
-Reads a meet's Google Sheet, uploads every pending deck evaluation to REMS, and writes `TRUE` back to the **Deck Eval Recorded?** column of each successful row.
-
-```bash
-python -m src.main upload-deck-evals \
-  --team <alias> \
-  --season 2025-2026 \
-  [--sheet-id <google_sheet_id>] \
-  [--positions-tab Positions] \
-  [--grid-tab Grid] \
-  [--meet-tab Meet] \
-  [--officials-tab Officials] \
-  [--session-col Session] \
-  [--rems-club ROW] \
-  [--meet-name "Override"] \
-  [--interactive] \
-  [--recheck] \
-  [--dry-run]
-```
-
-Flags:
-- `--sheet-id`: the meet's roster Google Sheet ID. **Optional** — when omitted, the tool searches the configured shared Drive folder for a season subfolder matching `--season` and gathers every meet subfolder that contains an "Officials Roster" sheet. With `--interactive`, you'll be prompted to pick one meet (`a` picks all of them, `q` quits). Without `--interactive`, every discovered meet is processed in turn — handy for a season-wide `--recheck`.
-- `--season-folder-id`: root Drive folder to search for season subfolders. Defaults to the hard-coded ROW shared drive. Only used when `--sheet-id` is not provided.
-- `--roster-name-substring`: substring used to identify the roster sheet inside a meet folder. Default `"Officials Roster"`.
-- `--rems-club`: only process rows whose `Official Club` column matches this value (case-insensitive). You can only add deck evaluations for officials registered under your own club in REMS, so the tool skips other-club rows by default. Defaults to `ROW`.
-- `--interactive`: prompt `y/n/q` before POSTing each row. Default if you just press Enter is `n` (skip). `q` aborts the rest of the batch.
-- `--recheck`: **verify-only** pass for new evals. Also includes rows already marked `Deck Eval Recorded? = TRUE`, confirms each one against REMS, and reports any missing from REMS as `MISSING`. Rows where REMS holds the eval but with the day and month accidentally swapped (a legacy bug from an earlier build of this tool) are flagged `SWAPPED`. With `--recheck --interactive`, each `MISSING` row prompts to add the eval to REMS now (y/N/q), and each `SWAPPED` row offers a `y/N` prompt to fix the date directly via the credential edit endpoint.
-- `--dry-run`: run all reads (including the per-row REMS lookups) but skip the POST and the sheet write-back.
-
-Expected sheet structure:
-
-- **Positions tab** (default `Positions`) — one row per official per session. Required columns: `Official Name`, `Official Position`, `Official Club`, `Deck Eval Success?`, `Deck Eval Provider`, `Deck Eval Recorded?`, and the session-identifier column (default `Session`).
-- **Grid tab** (default `Grid`) — 2D layout. Each session is a column header containing multi-line text such as `"Session 1\nFriday, Apr 10\nSenior Briefing: 3:55 pm\n..."`. The tool extracts the session number and date from this header. The year is taken from the Meet tab's `Meet Start Date`, falling back to the `--season` end year.
-- **Meet tab** (default `Meet`) — key/value layout (column A label, column B value). The tool reads `Meet Name` (or `Name`) and `Meet Start Date`. Override the meet name with `--meet-name` to skip this lookup.
-- **Officials tab** (default `Officials`) — name → REMS ID lookup. The tool finds the header row by looking for `Name` and `REMS ID` cells and builds the map from subsequent rows. Used to translate Positions-tab names into REMS IDs, which is more reliable than name-based REMS search.
-
-##### Position name normalization
-
-The Positions tab uses friendly names that don't always match REMS credential names. The tool applies a known-mismatch map before lookup:
-
-| Positions tab | REMS credential prefix |
-|---|---|
-| Chief Timer | Chief Timekeeper |
-| Admin Desk | Administration Desk |
-| Stroke Judge | Judge of Stroke |
-| Session Referee | Referee |
-| Timer | Introduction to Swimming Officiating |
-
-Other positions are used verbatim. Add new mappings in [src/utils.py](src/utils.py) (`_POSITION_TO_CREDENTIAL_PREFIX`) when you encounter a new mismatch.
-
-##### Pending-row filter
-
-A row is considered "pending" when all of:
-- `Deck Eval Success?` is `TRUE` / `YES` / `1` (case- and whitespace-insensitive),
-- `Deck Eval Recorded?` is empty or `FALSE`, AND
-- `Official Club` matches `--rems-club` (default `ROW`).
-
-`--recheck` removes the second condition but keeps the club filter.
-
-##### Per-row outcomes
-
-For each pending row:
-
-1. The official's name is looked up in the Officials tab to get a REMS ID.
-2. The REMS ID is resolved to `member_season_id` and `member_id` via REMS.
-3. Existing deck evaluations for the position are inspected to decide eval #1 vs #2.
-4. The same meet + session is checked against existing evaluation details; if already recorded, the row is treated as a success (cell ticked).
-5. Otherwise the new credential is POSTed and the cell ticked on a 302 success.
-
-Failures on individual rows are reported but do not abort the batch (unless you pick `q` in interactive mode).
 ## License
 
 [MIT](LICENSE) © 2026 Gavin Bee.
