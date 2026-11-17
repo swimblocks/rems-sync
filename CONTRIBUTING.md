@@ -6,7 +6,7 @@ This file contains instructions and development standards for to follow when mak
 
 *   **Test-Driven:** All new functionality must be accompanied by tests. All existing tests must pass before a change is considered complete.
 *   **Simplicity and Refactoring:** Strive for simple, readable code. If a change introduces complexity, consider refactoring to improve clarity.
-*   **Comprehensive Documentation:** All user-facing changes must be reflected in the documentation (`README.md`). All new code should have clear docstrings.
+*   **Comprehensive Documentation:** All user-facing changes must be reflected in the documentation ([`docs/`](docs/README.md); see [AGENTS.md](AGENTS.md#documentation) for which page covers what). All new code should have clear docstrings.
 
 ## On Every Change
 
@@ -17,7 +17,7 @@ Before finalizing a change, please ensure the following checklist is completed:
     -   [ ] Have I added new tests for the changes I've made?
     -   [ ] Do all tests (new and existing) pass?
 -   [ ] **Documentation:**
-    -   [ ] Have I updated the `README.md` to reflect any changes to the CLI or functionality?
+    -   [ ] Have I updated every page in `docs/` that my change makes wrong (at least the [CLI reference](docs/reference/cli.md) for any CLI change)?
     -   [ ] Have I added or updated docstrings for any new or modified functions/classes?
 -   [ ] **Code Quality:**
     -   [ ] Is the code easy to understand?
@@ -30,7 +30,7 @@ Before finalizing a change, please ensure the following checklist is completed:
 
 ### When adding a new feature:
 
-"Your primary goal is to add the new feature as requested, but it is equally important that you add comprehensive tests that validate the feature's functionality. Also, please update the `README.md` to include instructions on how to use the new feature."
+"Your primary goal is to add the new feature as requested, but it is equally important that you add comprehensive tests that validate the feature's functionality. Also, please update the docs in `docs/`: the reference for the facts, and a how-to guide if it is a new task."
 
 ### When fixing a bug:
 
