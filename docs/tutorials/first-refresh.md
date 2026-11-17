@@ -17,7 +17,7 @@ You'll need:
 git clone https://github.com/swimblocks/rems-sync.git
 cd rems-sync
 python -m venv .venv
-.venv/Scripts/activate        # PowerShell: .venv\Scripts\Activate.ps1; macOS/Linux: source .venv/bin/activate
+source .venv/bin/activate    # Git Bash on Windows: source .venv/Scripts/activate; PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python -m src.main --help
 ```
