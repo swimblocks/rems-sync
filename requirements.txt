@@ -1,6 +1,6 @@
 beautifulsoup4>=4.15.0
 click>=8.4.1
-google-auth>=2.54.0
+google-auth>=2.62.2
 gspread>=6.0
 keyring>=25
 lxml>=6.1.1
