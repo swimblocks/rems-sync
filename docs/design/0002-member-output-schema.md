@@ -1,6 +1,6 @@
 # 0002 — Stable member output columns
 
-Status: proposed (issue [#106](https://github.com/swimblocks/rems-sync/issues/106))
+Status: implemented (issue [#106](https://github.com/swimblocks/rems-sync/issues/106)); locked
 
 ## Context
 

@@ -29,6 +29,11 @@ Everything below is **repo-specific** — quirks that the canonical guide doesn'
   [`src/credentials.py`](src/credentials.py), ported from semotion-sync. Tests get an in-memory
   keychain from an autouse fixture in `tests/conftest.py`; never touch the real one. Why:
   [docs/explanation/saved-logins.md](docs/explanation/saved-logins.md).
+- **Registration member columns follow a committed contract.** The refresh script always uses
+  [`schemas/rems-members.toml`](schemas/rems-members.toml): append new columns and fail on missing
+  expected headers before uploading any tabs. Keep raw intermediate CSVs for member-details.
+  Direct member commands opt in with `--schema`; use [`src/member_schema.py`](src/member_schema.py)
+  for parsing, validation and projection, never a separate PowerShell schema implementation.
 - **Dates go to REMS as `d/m/Y`, not `m/d/Y`.** The form uses a flatpickr config that
   parses dates that way; getting this wrong silently records April 11 as November 4. Use
   `to_rems_date_format()` in [`src/utils.py`](src/utils.py).
@@ -105,4 +110,4 @@ placeholders such as `<sheet_id>`.
 - [`src/main.py`](src/main.py) — all Click commands live here
 - [`src/rems_client.py`](src/rems_client.py) — REMS HTTP client
 - [`src/gsheet.py`](src/gsheet.py) — Google Sheets / Drive helpers
-- [`tests/`](tests/) — `pytest -q` runs the full suite (~162 tests today)
+- [`tests/`](tests/) — `pytest -q` runs the full suite (~213 tests today)

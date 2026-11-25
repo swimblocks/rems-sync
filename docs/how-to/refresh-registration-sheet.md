@@ -11,6 +11,12 @@ You need:
 
 ## With the script (Windows)
 
+The script uses the committed [member schema](../../schemas/rems-members.toml) automatically.
+Its 117 expected columns retain the earlier export's order; additional columns go at the end.
+An expected header missing from REMS fails the run before the other refreshes or any uploads.
+It reports the missing headers so you can check which formulas depend on them before reviewing
+a change to the schema. The script has no schema flags.
+
 1. **Once per season, record the sheet** in your [`config.toml`](../reference/configuration.md#configtoml):
    ```toml
    [sheets]
@@ -23,7 +29,8 @@ You need:
    A browser opens for the Google sign-in. REMS may ask for its emailed code. Member details
    take a few minutes for a large club.
 3. **Check** it ended with `Done. CSVs are in …`. If a step failed, the script stopped there
-   and said which; the sheet's tabs before that step were already replaced.
+   and said which. A member schema failure leaves all three tabs untouched. For a later upload
+   failure, tabs uploaded before that step have already been replaced.
 4. **Delete the CSV folder** it names. The files hold members' personal details.
 
 What the script does, and its other parameters: [`refresh-registration.ps1`](../reference/refresh-registration-script.md).
@@ -38,6 +45,12 @@ reads, so a step can be rerun on its own.
    ```bash
    python -m src.main refresh-members --team row --season 2026-2027 --output csv --output-file members.csv
    ```
+   Keep this intermediate CSV raw: the next step needs its `REMS ID` column. Before proceeding,
+   run the same strict preflight as the script:
+   ```bash
+   python -m src.member_schema schemas/rems-members.toml members.csv
+   ```
+   Stop if this fails; it lists missing expected headers without uploading anything.
 3. **Member details:**
    ```bash
    python -m src.main refresh-member-details members.csv --team row --season 2026-2027 \
@@ -50,8 +63,14 @@ reads, so a step can be rerun on its own.
    ```
 5. **Upload all three.** Each replaces its tab.
    ```bash
-   python -m src.main upload-members --input-file members.csv --sheet-id <sheet_id>
+   python -m src.main upload-members --input-file members.csv --sheet-id <sheet_id> --schema schemas/rems-members.toml
    python -m src.main upload-member-details --input-file member_details.csv --sheet-id <sheet_id>
    python -m src.main upload-member-credentials --input-file credentials.csv --sheet-id <sheet_id>
    ```
 6. **Delete the CSV files.**
+
+For a custom layout in direct CLI commands, copy only an earlier CSV's header names into a
+TOML schema in the same order; omit the empty trailing field. Choose `extra_columns` and
+`missing_columns` policies as described in [Configuration](../reference/configuration.md#member-output-schemas).
+The script continues to use its committed contract. `refresh-members --schema <path>` can
+also write a projected CSV, but do not drop `REMS ID` from a CSV needed by member-details.

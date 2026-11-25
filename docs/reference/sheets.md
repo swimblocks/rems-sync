@@ -6,8 +6,9 @@ What rems-sync reads from and writes to Google Sheets and CSV files.
 
 Every command that writes a tab (`--output gsheet`, and the three `upload-*` commands) replaces
 it whole: it clears the tab, then writes a header row and the data. A tab that doesn't exist is
-created. Empty values are written as empty cells, and columns pandas names `Unnamed: …` (from
-trailing commas in a CSV) are dropped.
+created. Empty values are written as empty cells. Without a schema, columns pandas names
+`Unnamed: …` (from trailing commas in a CSV) are dropped. Schema-enabled member commands
+validate unnamed fields themselves and preserve every named column selected by the schema.
 
 ## The registration tabs
 
@@ -15,7 +16,7 @@ The member refresh writes three tabs, by default with these names:
 
 | Tab | Written by | Columns |
 |---|---|---|
-| `REMS Members` | `refresh-members`, `upload-members` | REMS's own members export, as REMS returns it. |
+| `REMS Members` | `refresh-members`, `upload-members` | REMS's members export; an optional schema controls output columns. The registration script always uses the committed schema. |
 | `REMS Member Details` | `refresh-member-details`, `upload-member-details` | `rems_id`, `member_id`, `member_season_id`, `season_id` |
 | `REMS Member Credentials` | `refresh-member-credentials`, `upload-member-credentials` | `rems_id`, `member_id`, `member_season_id`, `name`, `type`, `first_name`, `last_name`, `status`, `start_date`, `expiry_date`, `actions` |
 
@@ -24,6 +25,24 @@ type), `start_date` and `expiry_date` are REMS's `d/m/Y`, and `actions` is a com
 of the credential's REMS links.
 
 The CSV files have the same columns.
+
+### Stable member columns
+
+With a [member schema](configuration.md#member-output-schemas), declared columns keep their
+positions even when REMS reorders the export. Unexpected fields are appended in source order
+or dropped; missing expected fields produce blank columns with a warning, or an error,
+according to policy. Renames are not inferred: they appear as missing plus unexpected fields.
+An error leaves the destination untouched; this is not a transaction covering network failures
+once a valid write has started.
+
+Schema-enabled parsing preserves text, row order, duplicates, leading zeroes and literal `NA`.
+It rejects duplicate headers, unnamed fields between named fields, populated unnamed trailing
+fields, malformed quoting and rows with the wrong field count. Empty unnamed trailing fields
+are ignored. This stricter parsing applies only when a schema is selected.
+
+The registration script's member CSV remains the raw REMS export for downstream refreshes.
+Only the member tab is projected, using `schemas/rems-members.toml`; thus the intermediate
+CSV and tab can have different column orders. Details and credential columns are unchanged.
 
 ## Input CSV files
 

@@ -30,6 +30,35 @@ username = "<REMS username>"
 
 `auth login` and `auth logout` rewrite the file, keeping every other table but not comments.
 
+## Member output schemas
+
+These are separate UTF-8 TOML files, not tables in `config.toml`:
+
+```toml
+columns = ["Member First Name", "Member Last Name", "REMS ID"]
+extra_columns = "append"
+missing_columns = "warn"
+```
+
+`columns` is a required non-empty list of unique non-empty strings. Names match exactly,
+including case and spaces; double spaces in REMS headers are significant. Whitespace-only
+names, unknown keys and malformed files are errors. The optional policies are `append|drop`
+for extra columns (default `append`) and `warn|error` for missing columns (default `warn`).
+The corresponding [CLI overrides](cli.md#member-output-schemas) take precedence over the
+file settings. No schema means pass-through behaviour.
+
+[`schemas/rems-members.toml`](../../schemas/rems-members.toml) is the registration script's
+committed contract: 117 expected columns in their November 16, 2026 order, with
+`extra_columns = "append"` and `missing_columns = "error"`. It keeps `REMS ID` at column 60
+(BH). New columns go at the end; an absent expected header stops the script before any uploads.
+The script always uses this file and has no per-run schema switches. Changes to its expected
+columns go through code review.
+
+Direct member commands can use this contract or a custom file through `--schema <path>`.
+Schemas contain headers and policies only; never include member data. To recover an earlier
+layout, copy only the earlier CSV's header names, in order, omitting the empty trailing field.
+Review the full list before using it; a short schema intentionally selects fewer fields.
+
 ## OS keychain
 
 Through [`keyring`](https://pypi.org/project/keyring/): Windows Credential Manager, macOS
