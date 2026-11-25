@@ -113,9 +113,12 @@ def _drive_query(drive_session, q, drive_id=None):
         if not page_token:
             return out
 
-def write_df_to_sheet(df, sheet_id, sheet_name, client):
+def write_df_to_sheet(df, sheet_id, sheet_name, client, *, preserve_columns=False):
     """
     Writes a pandas DataFrame to a Google Sheet.
+
+    preserve_columns is for schema-projected data whose headers have already been validated;
+    a real header beginning with 'Unnamed:' must not be mistaken for pandas' trailing fields.
     """
     spreadsheet = client.open_by_key(sheet_id)
     try:
@@ -127,7 +130,8 @@ def write_df_to_sheet(df, sheet_id, sheet_name, client):
     # Replace NaN with empty string to avoid JSON compliance issues
     df_filled = df.fillna('')
     # Filter out columns that are "Unnamed" (Pandas adds these for trailing commas)
-    cols_to_include = [c for c in df_filled.columns if not str(c).startswith('Unnamed:')]
+    cols_to_include = [c for c in df_filled.columns
+                       if preserve_columns or not str(c).startswith('Unnamed:')]
     df_final = df_filled[cols_to_include]
     worksheet.update([df_final.columns.values.tolist()] + df_final.values.tolist())
     click.echo(f"Successfully wrote data to sheet: {sheet_name}")

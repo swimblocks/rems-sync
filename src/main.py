@@ -1,6 +1,7 @@
 import re
 import sys
 from io import StringIO
+from pathlib import Path
 
 import click
 import pandas as pd
@@ -24,6 +25,7 @@ from .gsheet import (
     update_cell,
     write_df_to_sheet,
 )
+from .member_schema import load_schema, project_csv, project_csv_file
 from .rems_client import MemorySessionStore, REMSClient, get_mfa_code
 from .utils import (
     count_existing_deck_evals,
@@ -487,35 +489,67 @@ def auth_logout(team_alias):
         raise click.ClickException(str(e)) from e
     click.echo(f"Removed the saved login for {team_alias!r}.")
 
+def member_schema_options(command):
+    """The optional output contract is shared by the two member commands only."""
+    options = [
+        click.option('--schema', type=click.Path(path_type=Path), help='Ordered member output schema (TOML).'),
+        click.option('--extra-columns', type=click.Choice(['append', 'drop']),
+                     help='Override unexpected-column policy; requires --schema.'),
+        click.option('--missing-columns', type=click.Choice(['warn', 'error']),
+                     help='Override missing-column policy; requires --schema.'),
+    ]
+    for option in reversed(options):
+        command = option(command)
+    return command
+
+
+def _member_schema(path, extra_columns, missing_columns):
+    try:
+        return load_schema(path, extra_columns=extra_columns, missing_columns=missing_columns)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+
 @cli.command()
 @team_option
+@member_schema_options
 @click.option('--output', type=click.Choice(['csv', 'gsheet']), default='csv', help='The output format.')
 @click.option('--output-file', help='The file to write CSV output to (required if output is csv).')
 @click.option('--sheet-id', help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Members', help='The name of the sheet to write to.')
 @click.option('--season', required=True, help='The season (e.g., "2025" or "2025-2026") to refresh.')
-def refresh_members(team_alias, output, output_file, sheet_id, sheet_name, season):
+def refresh_members(team_alias, output, output_file, sheet_id, sheet_name, season,
+                    schema, extra_columns, missing_columns):
     """Refreshes the REMS members list."""
+    contract = _member_schema(schema, extra_columns, missing_columns)
     season_id = parse_season_to_id(season)
     click.echo(f"Refreshing REMS members (output: {output}, season: {season}, season_id: {season_id})")
     client = _rems_client(team_alias)
     client.login()
     csv_data = client.get_members_csv(season_id)
 
+    projected = None
+    if contract is not None:
+        try:
+            projected = project_csv(csv_data, contract)
+        except ValueError as e:
+            raise click.ClickException(str(e)) from e
+
     if output == 'csv':
         if not output_file:
             click.echo("Output file is required for CSV output.", err=True)
             return
         with open(output_file, 'w', encoding='utf-8', newline='') as f:
-            f.write(csv_data)
+            f.write(csv_data if projected is None else projected.to_csv(index=False))
         click.echo(f"Successfully wrote data to {output_file}")
     elif output == 'gsheet':
         if not sheet_id:
             click.echo("Sheet ID is required for Google Sheet output.", err=True)
             return
-        df = pd.read_csv(StringIO(csv_data))
+        df = pd.read_csv(StringIO(csv_data)) if projected is None else projected
         gsheet_client = get_gspread_client()
-        write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
+        write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client,
+                          preserve_columns=contract is not None)
 
 @cli.command()
 @team_option
@@ -628,16 +662,20 @@ def refresh_member_credentials(team_alias, output, output_file, sheet_id, sheet_
             write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
 
 @cli.command()
+@member_schema_options
 @click.option('--input-file', type=click.Path(exists=True), required=True, help='The CSV file to upload.')
 @click.option('--sheet-id', required=True, help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Members', help='The name of the sheet to write to.')
-def upload_members(input_file, sheet_id, sheet_name):
+def upload_members(input_file, sheet_id, sheet_name, schema, extra_columns, missing_columns):
     """Uploads members from a CSV file to a Google Sheet."""
     click.echo(f"Uploading members from {input_file} to sheet {sheet_id}...")
+    contract = _member_schema(schema, extra_columns, missing_columns)
     try:
-        df = pd.read_csv(input_file)
+        df = (pd.read_csv(input_file) if contract is None else
+              project_csv_file(input_file, contract))
         gsheet_client = get_gspread_client()
-        write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client)
+        write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client,
+                          preserve_columns=contract is not None)
     except Exception as e:
         raise click.ClickException(f"Could not upload members: {e}") from e
 
