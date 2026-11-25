@@ -8,3 +8,4 @@ new one.
 | Record | Status | Subject |
 |---|---|---|
 | [0001](0001-saved-rems-login.md) | Implemented | Saved REMS logins in the OS keychain |
+| [0002](0002-member-output-schema.md) | Proposed | Stable member output columns |
