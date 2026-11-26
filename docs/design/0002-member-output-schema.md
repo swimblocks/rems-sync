@@ -46,8 +46,9 @@ extra_columns = "append"
 missing_columns = "warn"
 ```
 
-This short example selects only three fields; a compatibility schema lists every existing
-header in its original order. It contains header names only, never member rows or identifiers.
+This short example puts three fields first and appends the rest. To select only those fields,
+use `extra_columns = "drop"`. A compatibility schema lists every existing header in its
+original order. It contains header names only, never member rows or identifiers.
 Use TOML because the application already reads it for configuration; no new dependency is
 needed. Direct commands take an explicit schema path; the registration script uses the
 committed schema described below. Neither discovers schemas from `config.toml`.

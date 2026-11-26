@@ -57,7 +57,9 @@ columns go through code review.
 Direct member commands can use this contract or a custom file through `--schema <path>`.
 Schemas contain headers and policies only; never include member data. To recover an earlier
 layout, copy only the earlier CSV's header names, in order, omitting the empty trailing field.
-Review the full list before using it; a short schema intentionally selects fewer fields.
+Review the full list before using it. A short schema with `extra_columns = "append"` still
+includes all undeclared source columns, after the listed ones. To export only the listed
+fields, set `extra_columns = "drop"` or pass `--extra-columns drop`.
 
 ## OS keychain
 
