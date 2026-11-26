@@ -16,6 +16,14 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class MemberSchema:
+    """The ordered output columns and policies for member CSV projection.
+
+    Attributes:
+        columns: Unique header names in the required output order, matched exactly.
+        extra_columns: 'append' keeps unexpected fields at the end; 'drop' omits them.
+        missing_columns: 'warn' fills absent headers with blanks; 'error' rejects them.
+    """
+
     columns: tuple[str, ...]
     extra_columns: str = 'append'
     missing_columns: str = 'warn'
@@ -47,18 +55,17 @@ def load_schema(path, *, extra_columns=None, missing_columns=None):
         ('extra_columns', extra_columns, 'append', ('append', 'drop')),
         ('missing_columns', missing_columns, 'warn', ('warn', 'error')),
     ):
-        if data.get(key, default) not in choices or (override is not None and override not in choices):
+        file_value = data.get(key, default)
+        if file_value not in choices:
             raise ValueError(f'Schema {key} must be one of: {", ".join(choices)}.')
-        data[key] = override if override is not None else data.get(key, default)
+        if override is not None and override not in choices:
+            raise ValueError(f'Override {key} must be one of: {", ".join(choices)}.')
+        data[key] = override if override is not None else file_value
     return MemberSchema(tuple(columns), data['extra_columns'], data['missing_columns'])
 
 
-def project_csv(source, schema):
-    """Return a string-valued DataFrame in schema order, or reject ambiguous input.
-
-    Complete parsing and validation happen before a caller opens an output file or clears
-    a worksheet. Missing-column checks concern header presence, not empty member cells.
-    """
+def _read_named_rows(source):
+    """Parse unambiguous named fields, rejecting malformed or populated unnamed fields."""
     try:
         reader = csv.reader(StringIO(source.lstrip('\ufeff'), newline=''), strict=True)
         headers = next(reader, None)
@@ -83,6 +90,16 @@ def project_csv(source, schema):
             rows.append(row[:named_count])
     except csv.Error as e:
         raise ValueError('Malformed member CSV quoting.') from e
+    return named, rows
+
+
+def project_csv(source, schema):
+    """Return a string-valued DataFrame in schema order, or reject ambiguous input.
+
+    Complete parsing and validation happen before a caller opens an output file or clears
+    a worksheet. Missing-column checks concern header presence, not empty member cells.
+    """
+    named, rows = _read_named_rows(source)
 
     missing = [c for c in schema.columns if c not in named]
     if missing:

@@ -492,7 +492,7 @@ def auth_logout(team_alias):
 def member_schema_options(command):
     """The optional output contract is shared by the two member commands only."""
     options = [
-        click.option('--schema', type=click.Path(path_type=Path), help='Ordered member output schema (TOML).'),
+        click.option('--schema', 'schema_path', type=click.Path(path_type=Path), help='Ordered member output schema (TOML).'),
         click.option('--extra-columns', type=click.Choice(['append', 'drop']),
                      help='Override unexpected-column policy; requires --schema.'),
         click.option('--missing-columns', type=click.Choice(['warn', 'error']),
@@ -503,9 +503,9 @@ def member_schema_options(command):
     return command
 
 
-def _member_schema(path, extra_columns, missing_columns):
+def _load_member_schema(schema_path, extra_columns, missing_columns):
     try:
-        return load_schema(path, extra_columns=extra_columns, missing_columns=missing_columns)
+        return load_schema(schema_path, extra_columns=extra_columns, missing_columns=missing_columns)
     except ValueError as e:
         raise click.ClickException(str(e)) from e
 
@@ -519,9 +519,9 @@ def _member_schema(path, extra_columns, missing_columns):
 @click.option('--sheet-name', default='REMS Members', help='The name of the sheet to write to.')
 @click.option('--season', required=True, help='The season (e.g., "2025" or "2025-2026") to refresh.')
 def refresh_members(team_alias, output, output_file, sheet_id, sheet_name, season,
-                    schema, extra_columns, missing_columns):
+                    schema_path, extra_columns, missing_columns):
     """Refreshes the REMS members list."""
-    contract = _member_schema(schema, extra_columns, missing_columns)
+    schema = _load_member_schema(schema_path, extra_columns, missing_columns)
     season_id = parse_season_to_id(season)
     click.echo(f"Refreshing REMS members (output: {output}, season: {season}, season_id: {season_id})")
     client = _rems_client(team_alias)
@@ -529,9 +529,9 @@ def refresh_members(team_alias, output, output_file, sheet_id, sheet_name, seaso
     csv_data = client.get_members_csv(season_id)
 
     projected = None
-    if contract is not None:
+    if schema is not None:
         try:
-            projected = project_csv(csv_data, contract)
+            projected = project_csv(csv_data, schema)
         except ValueError as e:
             raise click.ClickException(str(e)) from e
 
@@ -549,7 +549,7 @@ def refresh_members(team_alias, output, output_file, sheet_id, sheet_name, seaso
         df = pd.read_csv(StringIO(csv_data)) if projected is None else projected
         gsheet_client = get_gspread_client()
         write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client,
-                          preserve_columns=contract is not None)
+                          preserve_columns=schema is not None)
 
 @cli.command()
 @team_option
@@ -666,16 +666,16 @@ def refresh_member_credentials(team_alias, output, output_file, sheet_id, sheet_
 @click.option('--input-file', type=click.Path(exists=True), required=True, help='The CSV file to upload.')
 @click.option('--sheet-id', required=True, help='The Google Sheet ID to write to.')
 @click.option('--sheet-name', default='REMS Members', help='The name of the sheet to write to.')
-def upload_members(input_file, sheet_id, sheet_name, schema, extra_columns, missing_columns):
+def upload_members(input_file, sheet_id, sheet_name, schema_path, extra_columns, missing_columns):
     """Uploads members from a CSV file to a Google Sheet."""
     click.echo(f"Uploading members from {input_file} to sheet {sheet_id}...")
-    contract = _member_schema(schema, extra_columns, missing_columns)
+    schema = _load_member_schema(schema_path, extra_columns, missing_columns)
     try:
-        df = (pd.read_csv(input_file) if contract is None else
-              project_csv_file(input_file, contract))
+        df = (pd.read_csv(input_file) if schema is None else
+              project_csv_file(input_file, schema))
         gsheet_client = get_gspread_client()
         write_df_to_sheet(df, sheet_id, sheet_name, gsheet_client,
-                          preserve_columns=contract is not None)
+                          preserve_columns=schema is not None)
     except Exception as e:
         raise click.ClickException(f"Could not upload members: {e}") from e
 

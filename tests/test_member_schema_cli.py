@@ -38,9 +38,16 @@ def test_all_member_outputs_use_same_projection(tmp_path, files, mode):
         assert df.iloc[0].tolist() == ['00012', 'NA', 'x']
 
 
-@pytest.mark.parametrize('command', ['refresh-members', 'refresh-gsheet', 'upload-members'])
+@pytest.mark.parametrize('cli_args', [
+    pytest.param(['refresh-members', '--team', 'row', '--season', '2026',
+                  '--output', 'csv', '--output-file', '{dest}'], id='refresh-csv'),
+    pytest.param(['refresh-members', '--team', 'row', '--season', '2026',
+                  '--output', 'gsheet', '--sheet-id', 'test-sheet'], id='refresh-gsheet'),
+    pytest.param(['upload-members', '--input-file', '{source}', '--sheet-id', 'test-sheet'],
+                 id='upload'),
+])
 @pytest.mark.parametrize('problem', ['invalid-schema', 'missing', 'duplicate'])
-def test_schema_errors_leave_existing_output_and_google_untouched(tmp_path, files, command, problem):
+def test_schema_errors_leave_existing_output_and_google_untouched(tmp_path, files, cli_args, problem):
     schema, source = files
     if problem == 'invalid-schema':
         schema.write_text('columns=[]', encoding='utf-8')
@@ -54,11 +61,7 @@ def test_schema_errors_leave_existing_output_and_google_untouched(tmp_path, file
           patch('src.main.get_gspread_client') as google,
           patch('src.main.write_df_to_sheet') as write):
         client.return_value.get_members_csv.return_value = source.read_text()
-        args = (['refresh-members', '--team', 'row', '--season', '2026', '--output-file', str(dest)]
-                if command != 'upload-members' else
-                ['upload-members', '--input-file', str(source), '--sheet-id', 'test-sheet'])
-        if command == 'refresh-gsheet':
-            args += ['--output', 'gsheet', '--sheet-id', 'test-sheet']
+        args = [arg.format(dest=dest, source=source) for arg in cli_args]
         result = CliRunner().invoke(cli, [*args, '--schema', str(schema)])
         assert result.exit_code != 0
         assert 'No such option' not in result.output
