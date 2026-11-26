@@ -44,13 +44,24 @@ python -m src.main auth status
 
 ## 3. Pull this season's members
 
+Create `practice-members.toml` in this folder:
+
+```toml
+columns = ["Member First Name", "Member Last Name", "REMS ID"]
+extra_columns = "drop"
+missing_columns = "error"
+```
+
+This gives the practice output three fixed columns. A new REMS field cannot move them;
+if an expected header disappears, the command stops instead of writing incomplete output.
+
 ```bash
-python -m src.main refresh-members --team row --season 2026-2027 --output csv --output-file members.csv
+python -m src.main refresh-members --team row --season 2026-2027 --output csv --output-file members.csv --schema practice-members.toml
 ```
 
 It prints `Using cached REMS session (MFA skipped)`: the session from step 2 at work. Open
-`members.csv`: one row per official registered with your club this season, in REMS's own
-export format.
+`members.csv`: one row per official registered with your club this season, with the three
+declared columns in exactly that order. A message lists the other REMS columns being dropped.
 
 ## 4. Let rems-sync into your sheet
 
@@ -69,15 +80,16 @@ A browser opens; sign in with your own Google account.
 Copy the sheet's ID from its URL, the part between `/d/` and `/edit`, then:
 
 ```bash
-python -m src.main upload-members --input-file members.csv --sheet-id <sheet_id>
+python -m src.main upload-members --input-file members.csv --sheet-id <sheet_id> --schema practice-members.toml
 ```
 
 It prints `Successfully wrote data to sheet: REMS Members`. Open the sheet: there is a new
-**REMS Members** tab with the CSV in it.
+**REMS Members** tab with the CSV in it. Applying the same schema again preserves the layout.
 
 ## 6. Tidy up
 
-Delete `members.csv`: it holds members' personal details. Delete the practice tab too, if you
+Delete `members.csv`: it holds members' personal details. You can remove `practice-members.toml`
+too; it contains only headers and policies. Delete the practice tab too, if you
 like.
 
 ## What you've done

@@ -41,7 +41,8 @@ The facts, to look up.
   roster layout, and position names.
 - [REMS](reference/rems.md): the login hops, cookies, URLs and values rems-sync relies on.
 - [Configuration](reference/configuration.md): `config.toml`, the keychain entries and the
-  environment variables.
+  environment variables; [member schemas](reference/configuration.md#member-output-schemas)
+  define stable output columns and missing/extra-column policies.
 - [`refresh-registration.ps1`](reference/refresh-registration-script.md): the season refresh
   script's parameters and steps.
 - [Terraform](reference/terraform.md): variables, resources and outputs.

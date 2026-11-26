@@ -11,6 +11,8 @@ season's registration sheet, and records deck evaluations from a meet's roster s
   code, and reuse the session for an hour.
 - Refresh members, member details and credentials, to CSV or a sheet tab; on Windows, refresh
   a season's whole registration sheet with one script.
+- Keep member columns stable with an [ordered schema](docs/reference/configuration.md#member-output-schemas).
+  The registration script uses a committed contract and stops if expected headers disappear.
 - Record deck evaluations one at a time, or a whole meet's from its roster sheet, never
   twice; and check a meet or season's sheets against REMS.
 

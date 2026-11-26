@@ -44,6 +44,25 @@ The refresh commands write to one of:
 
 The columns are in [Sheets and CSV files](sheets.md#the-registration-tabs).
 
+### Member output schemas
+
+`refresh-members` (CSV or gsheet output) and `upload-members` accept an optional contract:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--schema <path>` | none | An [ordered TOML schema](configuration.md#member-output-schemas). Relative paths use the caller's directory. |
+| `--extra-columns append\|drop` | file setting, then `append` | Append unexpected fields after the declared columns, or omit them. Requires `--schema`. |
+| `--missing-columns warn\|error` | file setting, then `warn` | Keep a blank column and warn, or fail on missing headers. Requires `--schema`. |
+
+Overrides resolve independently. Matching includes case and spaces. Diagnostics name columns,
+never member values. Missing means an absent header; an empty cell under an existing header
+is allowed. Without `--schema`, these commands retain the upstream order and existing parsing.
+
+Invalid schemas fail before network access. Invalid CSVs or missing headers under `error` fail
+before truncating an output file or clearing a sheet. Errors exit nonzero. With a schema,
+text such as leading zeroes and literal `NA` is preserved. Member-details, credentials and
+deck-evaluation commands do not accept these flags.
+
 ## `auth`
 
 ```
@@ -67,6 +86,8 @@ Downloads REMS's members export for a season.
 | `--season` | required | |
 | [Output](#output) flags | `--output csv` | Tab: `REMS Members`. |
 | `--team` | required | The [saved login](#rems-login). |
+
+Also accepts the [member schema options](#member-output-schemas).
 
 ## `refresh-member-details`
 
@@ -108,6 +129,15 @@ upload-member-credentials --input-file <csv> --sheet-id <id> [--sheet-name <tab>
 
 Write a CSV to a sheet tab, replacing it ([how](sheets.md#writing-a-tab)). The default tabs are
 `REMS Members`, `REMS Member Details` and `REMS Member Credentials`. They don't contact REMS.
+
+Only `upload-members` accepts the [member schema options](#member-output-schemas). For the
+registration contract, pass `--schema schemas/rems-members.toml`; it fails on missing headers
+and appends new columns without shifting the old ones.
+
+The registration pipeline uses `python -m src.member_schema <schema> [csv]` for local preflight:
+with a schema alone it validates the contract; with a CSV it also parses and projects that
+input in memory. It writes no files and contacts neither REMS nor Google. An error exits
+nonzero; the manual refresh sequence must stop there.
 
 ## `add-deck-eval`
 

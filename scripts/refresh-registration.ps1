@@ -13,6 +13,9 @@
     REMS credentials come from the saved login for -Team; save it once first with
     `python -m src.main auth login --team <alias>`. REMS may ask for an MFA code.
 
+    Member columns follow the committed schemas/rems-members.toml contract. New columns are
+    appended; missing expected columns stop the run before further refreshes or any uploads.
+
 .PARAMETER Team
     Saved REMS login (alias) to use, e.g. row.
 
@@ -49,9 +52,18 @@ param(
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Python = Join-Path $RepoRoot '.venv\Scripts\python.exe'
+$MemberSchema = Join-Path $RepoRoot 'schemas\rems-members.toml'
 
 if (-not (Test-Path $Python)) { throw "No virtualenv at $Python. See README Quick start." }
 if (-not (Get-Command gcloud -ErrorAction SilentlyContinue)) { throw "gcloud not found on PATH." }
+
+# Check local configuration before opening the Google sign-in browser.
+Push-Location $RepoRoot
+try {
+    & $Python -m src.member_schema $MemberSchema
+    if ($LASTEXITCODE -ne 0) { throw "The committed member schema is invalid." }
+}
+finally { Pop-Location }
 
 if (-not $SheetId) {
     Push-Location $RepoRoot
@@ -107,10 +119,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "gcloud login failed." }
 
     Invoke-Step 'Refresh members' @('refresh-members', '--team', $Team, '--season', $Season, '--output', 'csv', '--output-file', $Members) $Members
+    # Preserve the raw CSV for member-details, but reject schema drift before touching any tab.
+    & $Python -m src.member_schema $MemberSchema $Members
+    if ($LASTEXITCODE -ne 0) { throw "Member CSV does not satisfy the committed schema; no tabs were uploaded." }
     Invoke-Step 'Refresh member details' @('refresh-member-details', $Members, '--team', $Team, '--season', $Season, '--output', 'csv', '--output-file', $Details) $Details
     Invoke-Step 'Refresh member credentials' @('refresh-member-credentials', $Details, '--team', $Team, '--output', 'csv', '--output-file', $Credentials) $Credentials
 
-    Invoke-Step 'Upload members' @('upload-members', '--input-file', $Members, '--sheet-id', $SheetId)
+    Invoke-Step 'Upload members' @('upload-members', '--input-file', $Members, '--sheet-id', $SheetId, '--schema', $MemberSchema)
     Invoke-Step 'Upload member details' @('upload-member-details', '--input-file', $Details, '--sheet-id', $SheetId)
     Invoke-Step 'Upload member credentials' @('upload-member-credentials', '--input-file', $Credentials, '--sheet-id', $SheetId)
 
